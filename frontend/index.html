@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Caller Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container">
+        <div class="login-card glass-panel">
+            <div class="login-header">
+                <div class="logo">
+                    <span class="logo-icon">✨</span>
+                    <span>Ai Caller</span>
+                </div>
+                <h2 id="auth-title">Welcome Back</h2>
+                <p id="auth-subtitle">Please login to your account</p>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="Enter your username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="login-btn">Login</button>
+            </form>
+
+            <!-- Register Form (Hidden by default) -->
+            <form id="registerForm" class="login-form" style="display: none;">
+                <div class="form-group">
+                    <label for="reg-username">Username</label>
+                    <input type="text" id="reg-username" placeholder="Choose a username" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" placeholder="Create a password" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-confirm-password">Confirm Password</label>
+                    <input type="password" id="reg-confirm-password" placeholder="Confirm your password" required>
+                </div>
+                <button type="submit" class="login-btn">Register</button>
+            </form>
+
+            <div class="login-footer">
+                <p id="toggle-auth">Don't have an account? <a href="#" id="show-register">Register here</a></p>
+                <p id="toggle-login" style="display: none;">Already have an account? <a href="#" id="show-login">Login
+                        here</a></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container" id="mainApp" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="sidebar glass-panel">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">✨</span>
+                    <span>Ai Caller</span>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-view="dashboard">
+                    <span class="nav-icon">⊞</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-view="reports">
+                    <span class="nav-icon">📊</span>
+                    <span>Reports</span>
+                </a>
+                <a href="#" class="nav-item" data-view="settings">
+                    <span class="nav-icon">⚙️</span>
+                    <span>Settings</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar" id="user-avatar-initial">A</div>
+                    <div class="user-info">
+                        <span class="user-name" id="sidebar-userName">Admin</span>
+                        <span class="user-role">Admin</span>
+                    </div>
+                    <button id="logoutBtn" class="logout-icon-btn" title="Logout">
+                        <span class="icon">🚪</span>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header>
+                <div class="header-left">
+                    <p class="date" id="currentDate">Loading date...</p>
+                    <h1 class="greeting">Hello! <span id="display-userName">Admin</span>,</h1>
+                </div>
+                <div class="header-right" id="headerActions">
+                    <label for="fileUpload" class="upload-btn" id="uploadBtnLabel">
+                        <span class="icon">📤</span> Upload
+                    </label>
+                    <input type="file" id="fileUpload" accept=".xlsx, .xls, .csv" hidden>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view-section active">
+                <div class="overview-kpis">
+                    <div class="kpi-card glass-panel">
+                        <div class="kpi-icon">
+                            <span class="emoji">👥</span>
+                        </div>
+                        <div class="kpi-content">
+                            <p class="kpi-label">Total Borrowers</p>
+                            <p class="kpi-value" id="totalBorrowers">0</p>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card glass-panel">
+                        <div class="kpi-icon">
+                            <span class="emoji">💰</span>
+                        </div>
+                        <div class="kpi-content">
+                            <p class="kpi-label">Total Arrears</p>
+                            <p class="kpi-value" id="totalArrears">₹0.00</p>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card glass-panel">
+                        <div class="kpi-icon">
+                            <span class="emoji">📞</span>
+                        </div>
+                        <div class="kpi-content">
+                            <p class="kpi-label">Call Pending</p>
+                            <p class="kpi-value">0</p>
+                        </div>
+                    </div>
+
+                    <div class="kpi-card glass-panel">
+                        <div class="kpi-icon">
+                            <span class="emoji">⏱️</span>
+                        </div>
+                        <div class="kpi-content">
+                            <p class="kpi-label">Call Pending</p>
+                            <p class="kpi-value">0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="time-period-cards">
+                    <!-- More than 7 Days Card -->
+                    <div class="period-card glass-panel" data-period="more7">
+                        <div class="period-header">
+                            <h3>More than 7 Days</h3>
+                        </div>
+                        <div class="period-stats">
+                            <div class="stat-row">
+                                <span class="stat-label">Consistent Payer</span>
+                                <span class="stat-value" id="more7-consistent">
+                                    <span class="count">0</span>
+                                    <span class="emoji green">👥</span>
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Inconsistent Payer</span>
+                                <span class="stat-value" id="more7-inconsistent">
+                                    <span class="count">0</span>
+                                    <span class="emoji orange">👥</span>
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Overdue Payer</span>
+                                <span class="stat-value" id="more7-overdue">
+                                    <span class="count">0</span>
+                                    <span class="emoji red">🔔</span>
+                                </span>
+                            </div>
+                        </div>
+                        <button class="view-details-btn">View Details →</button>
+                    </div>
+
+                    <!-- 1-7 Days Card -->
+                    <div class="period-card glass-panel" data-period="1to7">
+                        <div class="period-header">
+                            <h3>1-7 Days</h3>
+                        </div>
+                        <div class="period-stats">
+                            <div class="stat-row">
+                                <span class="stat-label">Consistent Payer</span>
+                                <span class="stat-value" id="oneToSeven-consistent">
+                                    <span class="count">0</span>
+                                    <span class="emoji green">👥</span>
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Inconsistent Payer</span>
+                                <span class="stat-value" id="oneToSeven-inconsistent">
+                                    <span class="count">0</span>
+                                    <span class="emoji orange">👥</span>
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Overdue Payer</span>
+                                <span class="stat-value" id="oneToSeven-overdue">
+                                    <span class="count">0</span>
+                                    <span class="emoji red">🔔</span>
+                                </span>
+                            </div>
+                        </div>
+                        <button class="view-details-btn">View Details →</button>
+                    </div>
+
+                    <!-- Today Card -->
+                    <div class="period-card glass-panel" data-period="today">
+                        <div class="period-header">
+                            <h3>Today</h3>
+                        </div>
+                        <div class="period-stats">
+                            <div class="stat-row">
+                                <span class="stat-label">Consistent Payer</span>
+                                <span class="stat-value" id="today-consistent">
+                                    <span class="count">0</span>
+                                    <span class="emoji green">👥</span>
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Inconsistent Payer</span>
+                                <span class="stat-value" id="today-inconsistent">
+                                    <span class="count">0</span>
+                                    <span class="emoji orange">👥</span>
+                                </span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Overdue Payer</span>
+                                <span class="stat-value" id="today-overdue">
+                                    <span class="count">0</span>
+                                    <span class="emoji red">🔔</span>
+                                </span>
+                            </div>
+                        </div>
+                        <button class="view-details-btn">View Details →</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports View (Placeholder) -->
+            <div id="reports-view" class="view-section">
+                <div class="glass-panel" style="padding: 40px; text-align: center; border-radius: 20px;">
+                    <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
+                    <h2>Reports Dashboard</h2>
+                    <p style="color: #6b7280; margin-top: 10px;">Detailed reports and analytics will appear here.</p>
+                </div>
+            </div>
+
+            <!-- Summary Details View -->
+            <div id="summary-details-view" class="view-section">
+                <div class="summary-details-header">
+                    <div class="header-breadcrumb">
+                        <button class="back-btn" id="backToDashboard">
+                            <span class="icon">❮</span>
+                        </button>
+                        <span id="selectedPeriodLabel" class="period-label">6th Feb (Today Data)</span>
+                    </div>
+                    <div class="header-actions">
+                        <button class="filter-btn" id="resetAllCallsBtn" style="background: #fee2e2; color: #b91c1c;">
+                            <span class="icon">🔄</span> Reset All
+                        </button>
+                        <button class="make-call-btn" id="makeBulkCallBtn">
+                            <span class="icon">📞</span> Make call
+                        </button>
+                    </div>
+                </div>
+
+                <div class="call-data-section">
+                    <h2 class="section-title">Call Data</h2>
+
+                    <div class="call-table-header">
+                        <div class="col-borrower">Borrower Details</div>
+                        <div class="col-due">Loan yet to pay</div>
+                        <div class="col-total">Total Loan amount</div>
+                        <div class="col-status">Status</div>
+                        <div class="col-action"></div>
+                    </div>
+
+                    <div class="call-rows-container" id="callRowsContainer">
+                        <!-- Rows will be injected here by JS -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Details Modal -->
+    <div id="detailsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Borrower Details</h2>
+                <span class="close-btn">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="details-summary">
+                    <div class="summary-item">
+                        <span class="summary-label">Total Borrowers:</span>
+                        <span class="summary-value" id="modalTotalBorrowers">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Consistent:</span>
+                        <span class="summary-value green" id="modalConsistent">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Inconsistent:</span>
+                        <span class="summary-value orange" id="modalInconsistent">0</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Overdue:</span>
+                        <span class="summary-value red" id="modalOverdue">0</span>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="borrowersTable">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Borrower</th>
+                                <th>Amount</th>
+                                <th>EMI</th>
+                                <th>Phone</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="borrowersTableBody">
+                            <!-- Data will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="spinner-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p>Processing...</p>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
