@@ -5,6 +5,10 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from config import settings
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Security configuration
 SECRET_KEY = getattr(settings, "SECRET_KEY", "your-secret-key-for-jwt-change-this-in-production")
@@ -83,9 +87,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     
     # Verify user exists in DB
-    from app.db import db
-    user = db.get_user_by_any(identifier)
+    from app.table_models.users_table import get_user_by_any
+    user = await get_user_by_any(identifier)
+    
     if user is None:
         raise credentials_exception
+        
+    # LOGOUT CHECK: 
+    # Compare incoming token with the 'access_token' stored in DB.
+    # If DB token is None or doesn't match, the user has logged out.
+    if user.get("access_token") != token:
+        logger.warning(f"Revoked token attempt for user: {user.get('username')}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked. Please login again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
         
     return user

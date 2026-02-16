@@ -10,16 +10,20 @@ from .utils import (
     verify_password
 )
 import logging
-from app.db import db
+from app.table_models.users_table import (
+    get_user_by_username,
+    get_user_by_id,
+    create_user,
+    update_user_tokens,
+    revoke_user_tokens
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# ==========================================
-# MODELS
-# ==========================================
+# ... (Models remain same)
 class UserAuth(BaseModel):
     username: str
     password: str
@@ -42,7 +46,7 @@ class TokenResponse(BaseModel):
 async def register(auth: UserAuth):
     """Register a new user account"""
     # Check if user already exists
-    if db.get_user(auth.username):
+    if await get_user_by_username(auth.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
@@ -55,7 +59,7 @@ async def register(auth: UserAuth):
         "role": "admin", # Default role
         "refresh_token": None
     }
-    db.create_user(user_data)
+    await create_user(user_data)
     
     return {"status": "success", "message": "User registered successfully"}
 
@@ -63,7 +67,12 @@ async def register(auth: UserAuth):
 async def login(auth: UserAuth):
     """Login and receive access/refresh tokens"""
     logger.info(f"Login attempt for identifier: {auth.username}")
-    user = db.get_user_by_any(auth.username)
+    
+    # Check by username
+    user = await get_user_by_username(auth.username)
+    if not user:
+        # Check by ID (fallback for identifier)
+        user = await get_user_by_id(auth.username)
     
     if not user:
         logger.warning(f"Login failed: User '{auth.username}' not found in database")
@@ -96,12 +105,14 @@ async def login(auth: UserAuth):
     access_expires_at = datetime.utcnow() + access_token_expires
     
     # Store refresh token, access token AND expiration times in DB for visibility
-    db.update_user_tokens(
+    await update_user_tokens(
         user["username"], 
-        refresh_token, 
-        refresh_expires=refresh_expires_at,
-        access_token=access_token,
-        access_expires=access_expires_at
+        {
+            "refresh_token": refresh_token,
+            "refresh_token_expires_at": refresh_expires_at,
+            "access_token": access_token,
+            "last_access_token_expires_at": access_expires_at
+        }
     )
     
     return {
@@ -125,8 +136,8 @@ async def refresh_token(refresh_token: str):
             detail="Invalid refresh token"
         )
     
-    username = payload.get("sub")
-    user = db.get_user(username)
+    user_id = payload.get("sub")
+    user = await get_user_by_id(user_id)
     
     if not user or user.get("refresh_token") != refresh_token:
         raise HTTPException(
@@ -137,24 +148,26 @@ async def refresh_token(refresh_token: str):
     # Generate new access token
     access_token_expires = timedelta(minutes=60)
     new_access_token = create_access_token(
-        data={"sub": username},
+        data={"sub": str(user["_id"])},
         expires_delta=access_token_expires
     )
     access_expires_at = datetime.utcnow() + access_token_expires
     
     # Update the access token string and expiration in DB for visibility
-    db.update_user_tokens(
-        username, 
-        access_token=new_access_token, 
-        access_expires=access_expires_at
+    await update_user_tokens(
+        user["username"], 
+        {
+            "access_token": new_access_token,
+            "last_access_token_expires_at": access_expires_at
+        }
     )
     
     return {"access_token": new_access_token, "token_type": "bearer"}
 
 @router.post("/logout")
 async def logout(current_user: dict = Depends(get_current_user)):
-    """Logout and revoke refresh token"""
-    db.revoke_refresh_token(current_user["username"])
+    """Logout and revoke tokens (access and refresh)"""
+    await revoke_user_tokens(current_user["username"])
     return {"status": "success", "message": "Logged out successfully"}
 
 @router.get("/verify")

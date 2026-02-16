@@ -1,10 +1,11 @@
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
 // Global state
 let currentKpiData = null;
 let currentView = 'dashboard';
 let currentBorrowerId = null;
 let authToken = sessionStorage.getItem('auth_token');
+let refreshTokenInProgress = false;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
@@ -13,6 +14,73 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     checkAuth();
 });
+
+// Helper function for making authenticated API requests
+async function makeAuthenticatedRequest(url, options = {}) {
+    // Ensure we have the latest token
+    authToken = sessionStorage.getItem('auth_token');
+
+    if (!authToken) {
+        throw new Error('Not authenticated');
+    }
+
+    // Add authorization header
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${authToken}`
+    };
+
+    const requestOptions = {
+        ...options,
+        headers
+    };
+
+    try {
+        const response = await fetch(url, requestOptions);
+
+        // Handle 401 Unauthorized - token might be expired
+        if (response.status === 401) {
+            console.warn('⚠️ Authentication failed - token may be expired');
+
+            // Try to refresh token
+            const refreshToken = sessionStorage.getItem('refresh_token');
+            if (refreshToken && !refreshTokenInProgress) {
+                refreshTokenInProgress = true;
+                try {
+                    const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ refresh_token: refreshToken })
+                    });
+
+                    if (refreshResponse.ok) {
+                        const data = await refreshResponse.json();
+                        authToken = data.access_token;
+                        sessionStorage.setItem('auth_token', authToken);
+                        refreshTokenInProgress = false;
+
+                        // Retry the original request with new token
+                        headers['Authorization'] = `Bearer ${authToken}`;
+                        return await fetch(url, { ...options, headers });
+                    }
+                } catch (error) {
+                    console.error('Token refresh failed:', error);
+                }
+                refreshTokenInProgress = false;
+            }
+
+            // If refresh failed or no refresh token, logout
+            showNotification('Session expired. Please login again.', 'warning');
+            handleLogout();
+            throw new Error('Authentication failed');
+        }
+
+        return response;
+    } catch (error) {
+        console.error('API request error:', error);
+        throw error;
+    }
+}
 
 // Authentication Check
 function checkAuth() {
@@ -209,15 +277,13 @@ async function handleResetCalls() {
 
     showLoading(true);
     try {
-        const response = await fetch(`${API_BASE_URL}/ai_calling/reset_calls`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/ai_calling/reset_calls`, {
+            method: 'POST'
         });
 
         if (!response.ok) {
-            throw new Error('Failed to reset calls');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'Failed to reset calls');
         }
 
         showNotification('All call records have been reset.', 'success');
@@ -235,7 +301,9 @@ async function handleResetCalls() {
         }
     } catch (error) {
         console.error('Reset error:', error);
-        showNotification('Error resetting calls', 'error');
+        if (error.message !== 'Authentication failed') {
+            showNotification('Error resetting calls', 'error');
+        }
     } finally {
         showLoading(false);
     }
@@ -311,15 +379,13 @@ async function fetchData() {
 
     showLoading(true);
     try {
-        const response = await fetch(`${API_BASE_URL}/data_ingestion/data?include_details=true`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            }
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/data_ingestion/data?include_details=true`, {
+            method: 'POST'
         });
 
         if (!response.ok) {
-            throw new Error('Failed to fetch existing data');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'Failed to fetch existing data');
         }
 
         const data = await response.json();
@@ -331,6 +397,9 @@ async function fetchData() {
         }
     } catch (error) {
         console.error('Fetch data error:', error);
+        if (error.message !== 'Authentication failed') {
+            showNotification(`Error fetching data: ${error.message}`, 'error');
+        }
     } finally {
         showLoading(false);
     }
@@ -364,6 +433,7 @@ async function handleLogin(e) {
         const data = await response.json();
         authToken = data.access_token;
         sessionStorage.setItem('auth_token', authToken);
+        sessionStorage.setItem('refresh_token', data.refresh_token);
         sessionStorage.setItem('user_name', data.user.username);
 
         // CLEAR OLD STORAGE ON FRESH LOGIN
@@ -453,16 +523,13 @@ async function handleFileUpload(event) {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch(`${API_BASE_URL}/data_ingestion/data?include_details=true`, {
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/data_ingestion/data?include_details=true`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${authToken}`
-            },
             body: formData
         });
 
         if (!response.ok) {
-            const error = await response.json();
+            const error = await response.json().catch(() => ({}));
             throw new Error(error.detail || 'Failed to upload file');
         }
 
@@ -486,7 +553,9 @@ async function handleFileUpload(event) {
         showNotification('File uploaded successfully!', 'success');
     } catch (error) {
         console.error('Upload error:', error);
-        showNotification(`Error: ${error.message}`, 'error');
+        if (error.message !== 'Authentication failed') {
+            showNotification(`Error: ${error.message}`, 'error');
+        }
     } finally {
         showLoading(false);
         event.target.value = ''; // Reset file input
@@ -722,16 +791,18 @@ async function handleBulkCall() {
             use_dummy_data: true
         };
 
-        const response = await fetch(`${API_BASE_URL}/ai_calling/trigger_calls`, {
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/ai_calling/trigger_calls`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
         });
 
-        if (!response.ok) throw new Error('Bulk call request failed');
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'Bulk call request failed');
+        }
 
         const result = await response.json();
         console.log('Bulk Call Results:', result);
@@ -785,7 +856,9 @@ async function handleBulkCall() {
 
     } catch (error) {
         console.error('Bulk call error:', error);
-        showNotification(`Error: ${error.message}`, 'error');
+        if (error.message !== 'Authentication failed') {
+            showNotification(`Error: ${error.message}`, 'error');
+        }
 
         // Reset progress status on error
         borrowers.forEach(b => {

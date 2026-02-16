@@ -1,38 +1,19 @@
-from pymongo import MongoClient
+from database import db_manager
 import logging
-import certifi
 from datetime import datetime
 from bson.objectid import ObjectId
 from config import settings
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MongoDB:
     def __init__(self):
-        self.uri = settings.MONGO_URI
-        self.db_name = settings.MONGO_DB_NAME
-        self.client = None
-        self.db = None
-        self.connect()
-
-    def connect(self):
-        try:
-            # Added tlsCAFile=certifi.where() to fix SSL handshake errors on macOS
-            self.client = MongoClient(self.uri, tlsCAFile=certifi.where())
-            self.db = self.client[self.db_name]
-            # Test connection
-            self.client.admin.command('ping')
-            logger.info("✅ Successfully connected to MongoDB")
-        except Exception as e:
-            logger.error(f"❌ Failed to connect to MongoDB: {e}")
-            self.db = None
+        # Now using the centralized handle from root database.py
+        pass
 
     def get_collection(self, collection_name):
-        if self.db is not None:
-            return self.db[collection_name]
-        return None
+        return db_manager.get_collection(collection_name)
 
     # ==========================================
     # USER AUTHENTICATION METHODS
@@ -94,13 +75,17 @@ class MongoDB:
             )
         return None
 
-    def revoke_refresh_token(self, username):
-        """Logout: Remove refresh token"""
+    def revoke_tokens(self, username):
+        """Logout: Remove refresh and access tokens from DB"""
         collection = self.get_collection("users")
         if collection is not None:
             return collection.update_one(
                 {"username": username},
-                {"$set": {"refresh_token": None, "updated_at": datetime.utcnow()}}
+                {"$set": {
+                    "refresh_token": None, 
+                    "access_token": None,
+                    "updated_at": datetime.utcnow()
+                }}
             )
         return None
 
@@ -151,12 +136,30 @@ class MongoDB:
         if collection is not None:
             # Try to match as both string and integer
             query_ids = [str(borrower_id)]
+            
+            # If ID starts with 'BRW', also try searching for the numeric part
+            if str(borrower_id).upper().startswith("BRW"):
+                numeric_part = str(borrower_id)[3:]
+                query_ids.append(numeric_part)
+                try:
+                    query_ids.append(int(numeric_part))
+                except: pass
+            
             try:
                 query_ids.append(int(borrower_id))
             except: pass
             
             return collection.find_one({"NO": {"$in": query_ids}})
         return None
+
+    def delete_all_borrowers(self):
+        """Delete all records from the borrowers collection"""
+        collection = self.get_collection("borrowers")
+        if collection is not None:
+            result = collection.delete_many({})
+            logger.info(f"🗑️ Deleted all borrowers: {result.deleted_count} records removed")
+            return result.deleted_count
+        return 0
 
     # ==========================================
     # CALL SESSION METHODS

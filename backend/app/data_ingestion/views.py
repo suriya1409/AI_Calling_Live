@@ -3,9 +3,17 @@ import pandas as pd
 import io
 import time
 from typing import Optional, List, Dict
-from .utils import Config, logger, validate_file_size, normalize_column_names, optimize_dataframe
+from .utils import Config, logger, validate_file_size, normalize_column_names, optimize_dataframe, sanitize_for_json
 from .service import categorize_customer, categorize_by_due_date
-from app.db import db
+from app.table_models.borrowers_table import (
+    get_all_borrowers,
+    get_borrower_by_no,
+    bulk_upsert_borrowers,
+    update_borrower,
+    delete_borrower,
+    delete_all_borrowers,
+    get_global_borrower_stats
+)
 from app.auth.utils import get_current_user
 
 router = APIRouter()
@@ -15,15 +23,29 @@ def read_root():
     """Health check endpoint with system status."""
     return {
         "status": "running",
-        "message": "Data Ingestion & CRUD API - MongoDB Integrated",
-        "version": "4.0",
+        "message": "Data Ingestion & CRUD API: User Isolated",
+        "version": "4.2",
         "endpoints": {
             "upload": "POST /data (multipart/form-data)",
             "list": "GET /borrowers",
             "get": "GET /borrowers/{id}",
             "update": "PUT /borrowers/{id}",
-            "delete": "DELETE /borrowers/{id}"
+            "delete": "DELETE /borrowers/{id}",
+            "delete_all": "DELETE /delete_all",
+            "global_stats": "GET /debug/global_stats (Debug only)"
         }
+    }
+
+@router.get("/debug/global_stats")
+async def get_all_db_stats(current_user: dict = Depends(get_current_user)):
+    """
+    DEBUG ONLY: Check total records across all users to verify isolation is working.
+    """
+    stats = await get_global_borrower_stats()
+    return {
+        "message": "Isolation Audit: Total records across all users in MongoDB",
+        "current_user_id": str(current_user["_id"]),
+        "stats": stats
     }
 
 # ==========================================
@@ -38,13 +60,18 @@ async def unified_data_endpoint(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    **UPLOAD & ANALYSIS** - Process dataset and save to MongoDB borrowers collection.
+    **UPLOAD & ANALYSIS** - Process dataset and save to MongoDB borrowers collection with User Isolation.
     """
     start_time = time.time()
+    user_id = str(current_user["_id"])
     
     if file:
-        logger.info(f"Processing dataset upload: {file.filename}")
+        logger.info(f"Processing dataset upload for user {user_id}: {file.filename}")
         
+        # Validate file size
+        if not validate_file_size(file):
+             raise HTTPException(status_code=400, detail="File too large")
+
         # Validate file type
         if not any(file.filename.endswith(ext) for ext in Config.ALLOWED_EXTENSIONS):
             raise HTTPException(status_code=400, detail="Invalid file type")
@@ -64,28 +91,26 @@ async def unified_data_endpoint(
             df['Payment_Category'] = df.apply(categorize_customer, axis=1)
             df['Due_Date_Category'] = df.apply(categorize_by_due_date, axis=1)
             
-            # --- FIX: Handle NaT (Not a Time) and NaN (Not a Number) for MongoDB ---
-            # MongoDB driver cannot serialize Pandas NaT/NaN objects
+            # Handle NaT/NaN for MongoDB
             df = df.replace({pd.NA: None, pd.NaT: None})
             df = df.where(pd.notnull(df), None)
             
-            # Convert to records for MongoDB
+            # Convert to records
             records = df.to_dict('records')
             
-            # Persist in MongoDB
-            db.bulk_upsert_borrowers(records)
+            # Persist in MongoDB with User Isolation
+            await bulk_upsert_borrowers(user_id, records)
             
-            logger.info(f"Successfully ingested {len(records)} borrowers into MongoDB")
+            logger.info(f"Successfully ingested {len(records)} borrowers for user {user_id}")
             
         except Exception as e:
-            logger.error(f"Ingestion error: {e}")
-            # Log the full traceback for debugging if needed
+            logger.error(f"Ingestion error for user {user_id}: {e}")
             import traceback
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=str(e))
     
-    # Fetch all borrowers to build the response
-    borrowers = db.get_all_borrowers(limit=2000)
+    # Fetch borrowers for the current user only
+    borrowers = await get_all_borrowers(user_id, limit=2000)
     
     # Calculate KPIs and Breakdown
     total_arrears = 0
@@ -95,21 +120,13 @@ async def unified_data_endpoint(
         "Today": []
     }
     
-    import math
-
     for b in borrowers:
-        # Convert _id to string for JSON serialization
-        if "_id" in b: b["_id"] = str(b["_id"])
-        
-        # Sanitize float values (NaN/Inf) which are not JSON compliant
-        for key, value in b.items():
-            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-                b[key] = None
-
         # Calculate total arrears
         amount = b.get("AMOUNT", 0)
         if amount is not None:
-            total_arrears += amount
+            try:
+                total_arrears += float(amount)
+            except: pass
         
         # Group by due date category
         due_cat = b.get("Due_Date_Category", "Today")
@@ -131,70 +148,63 @@ async def unified_data_endpoint(
         "processing_time": round(time.time() - start_time, 2)
     }
     
-    return response_data
+    return sanitize_for_json(response_data)
 
 # ==========================================
-# BORROWERS CRUD OPERATIONS
+# BORROWERS CRUD OPERATIONS (Standalone API)
 # ==========================================
 
 @router.get("/borrowers", response_model=List[Dict])
-async def list_borrowers(
+async def list_borrowers_api(
     limit: int = 100, 
     skip: int = 0,
     current_user: dict = Depends(get_current_user)
 ):
-    """List borrowers with optional filtering"""
-    # Fetch from Mongo
-    borrowers = db.get_all_borrowers(limit=limit)
-    for b in borrowers:
-        b["_id"] = str(b["_id"])
-    return borrowers
+    """List borrowers for the current user"""
+    user_id = str(current_user["_id"])
+    borrowers = await get_all_borrowers(user_id, limit=limit, skip=skip)
+    return sanitize_for_json(borrowers)
+
+@router.delete("/delete_all")
+async def delete_all_borrowers_api(current_user: dict = Depends(get_current_user)):
+    """Delete all borrower records for the current user"""
+    user_id = str(current_user["_id"])
+    count = await delete_all_borrowers(user_id)
+    return {
+        "status": "success", 
+        "message": f"Successfully deleted {count} borrower records for you",
+        "deleted_count": count
+    }
 
 @router.get("/borrowers/{borrower_no}")
-async def get_borrower(borrower_no: str, current_user: dict = Depends(get_current_user)):
+async def get_borrower_api(borrower_no: str, current_user: dict = Depends(get_current_user)):
     """Get details of a specific borrower by their NO identifier"""
-    borrower = db.get_borrower_by_id(borrower_no)
+    user_id = str(current_user["_id"])
+    borrower = await get_borrower_by_no(user_id, borrower_no)
     if not borrower:
-        raise HTTPException(status_code=404, detail="Borrower not found")
-    borrower["_id"] = str(borrower["_id"])
-    return borrower
+        raise HTTPException(status_code=404, detail="Borrower not found in your dataset")
+    return sanitize_for_json(borrower)
 
 @router.put("/borrowers/{borrower_no}")
-async def update_borrower(
+async def update_borrower_api(
     borrower_no: str, 
     update_data: Dict = Body(...),
     current_user: dict = Depends(get_current_user)
 ):
-    """Update borrower information (handles string or int NO)"""
-    collection = db.get_collection("borrowers")
-    
-    # Prepare query to match both string and integer
-    query_ids = [str(borrower_no)]
-    try:
-        query_ids.append(int(borrower_no))
-    except: pass
-    
-    result = collection.update_one({"NO": {"$in": query_ids}}, {"$set": update_data})
-    
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Borrower not found")
+    """Update borrower information for the current user"""
+    user_id = str(current_user["_id"])
+    success = await update_borrower(user_id, borrower_no, update_data)
+    if not success:
+        raise HTTPException(status_code=404, detail="Borrower not found in your dataset")
         
-    return {"status": "success", "modified_count": result.modified_count}
+    return {"status": "success", "message": "Borrower updated"}
 
 @router.delete("/borrowers/{borrower_no}")
-async def delete_borrower(borrower_no: str, current_user: dict = Depends(get_current_user)):
-    """Delete a borrower record (handles string or int NO)"""
-    collection = db.get_collection("borrowers")
-    
-    # Prepare query to match both string and integer
-    query_ids = [str(borrower_no)]
-    try:
-        query_ids.append(int(borrower_no))
-    except: pass
-    
-    result = collection.delete_one({"NO": {"$in": query_ids}})
-    
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Borrower not found")
+async def delete_borrower_api(borrower_no: str, current_user: dict = Depends(get_current_user)):
+    """Delete a borrower record for the current user"""
+    user_id = str(current_user["_id"])
+    success = await delete_borrower(user_id, borrower_no)
+    if not success:
+        raise HTTPException(status_code=404, detail="Borrower not found in your dataset")
         
     return {"status": "success", "message": "Borrower deleted"}

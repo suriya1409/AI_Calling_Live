@@ -120,3 +120,29 @@ def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if 'STATUS' in df.columns:
         df['STATUS'] = df['STATUS'].astype('category')
     return df
+
+
+def sanitize_for_json(data):
+    """
+    Recursively sanitize data for JSON serialization.
+    - Converts NaN/Inf floats to None
+    - Converts MongoDB ObjectId to string
+    - Handles nested lists and dictionaries
+    """
+    import math
+    from bson import ObjectId
+    
+    if isinstance(data, list):
+        return [sanitize_for_json(item) for item in data]
+    
+    if isinstance(data, dict):
+        return {key: sanitize_for_json(value) for key, value in data.items()}
+    
+    if isinstance(data, float):
+        if math.isnan(data) or math.isinf(data):
+            return None
+            
+    if isinstance(data, ObjectId):
+        return str(data)
+        
+    return data
