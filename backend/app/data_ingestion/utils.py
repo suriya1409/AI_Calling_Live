@@ -108,7 +108,7 @@ def normalize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     
     # 2. Final normalization for MongoDB compatibility
     df.columns = [
-        str(col).replace('\n', ' ').replace('.', '_').strip() 
+        str(col).replace('\n', ' ').replace('.', '_').replace('/', ' ').strip() 
         for col in df.columns
     ]
     return df

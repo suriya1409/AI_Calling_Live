@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Body
 import pandas as pd
 import io
 import time
+from datetime import datetime
 from typing import Optional, List, Dict
 from .utils import Config, logger, validate_file_size, normalize_column_names, optimize_dataframe, sanitize_for_json
 from .service import categorize_customer, categorize_by_due_date
@@ -208,3 +209,53 @@ async def delete_borrower_api(borrower_no: str, current_user: dict = Depends(get
         raise HTTPException(status_code=404, detail="Borrower not found in your dataset")
         
     return {"status": "success", "message": "Borrower deleted"}
+
+@router.get("/export/csv")
+async def export_borrowers_csv(current_user: dict = Depends(get_current_user)):
+    """Export all borrower data as CSV for the current user"""
+    from fastapi.responses import StreamingResponse
+    import csv
+    from io import StringIO
+    
+    user_id = str(current_user["_id"])
+    borrowers = await get_all_borrowers(user_id, limit=10000)
+    
+    if not borrowers:
+        raise HTTPException(status_code=404, detail="No borrower data found")
+    
+    # Define CSV columns
+    columns = [
+        "NO", "BORROWER", "AMOUNT", "EMI", "MOBILE", "LANGUAGE",
+        "Payment_Category", "Due_Date_Category", "DUE_DATE", "LAST_PAID_DATE",
+        "LAST DUE REVD DATE", "call_completed", "payment_confirmation", "follow_up_date", "ai_summary"
+    ]
+    
+    # Create CSV in memory
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=columns, extrasaction='ignore')
+    writer.writeheader()
+    
+    for borrower in borrowers:
+        # Prepare row data
+        row = {}
+        for col in columns:
+            value = borrower.get(col, "")
+            # Handle boolean values
+            if isinstance(value, bool):
+                value = "Yes" if value else "No"
+            # Handle None values
+            if value is None:
+                value = ""
+            row[col] = value
+        writer.writerow(row)
+    
+    # Prepare response
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=borrowers_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        }
+    )

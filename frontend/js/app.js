@@ -497,6 +497,11 @@ function showView(viewId) {
     if (targetElement) {
         targetElement.classList.add('active');
     }
+
+    // Populate reports table when switching to reports view
+    if (viewId === 'reports') {
+        populateReportsTable();
+    }
 }
 
 // Handle file upload
@@ -579,6 +584,11 @@ function updateDashboard(data) {
         updateCardLocal('more7', byDate['More_than_7_days']);
         updateCardLocal('oneToSeven', byDate['1-7_days']);
         updateCardLocal('today', byDate['Today']);
+    }
+
+    // Update reports table if we're on the reports view
+    if (currentView === 'reports') {
+        populateReportsTable();
     }
 }
 
@@ -680,7 +690,7 @@ function createCallDataRow(borrower) {
         statusBtnClass = "success";
     }
 
-    const lastPaid = borrower.LAST_PAID_DATE || borrower.DUE_DATE || 'N/A';
+    const lastPaid = borrower['LAST DUE REVD DATE'] || borrower['LAST DUE/REVD DATE'] || borrower.LAST_PAID_DATE || borrower.DUE_DATE || 'N/A';
     const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
     const totalAmount = (borrower.TOTAL_LOAN || (borrower.AMOUNT * 1.5) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
@@ -941,3 +951,164 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// ============================================================
+// REPORTS SECTION FUNCTIONALITY
+// ============================================================
+
+function populateReportsTable() {
+    const tableBody = document.getElementById('reportsTableBody');
+
+    if (!currentKpiData || !currentKpiData.detailed_breakdown) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="9" style="padding: 60px; text-align: center; color: #9ca3af;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
+                    <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No data available</div>
+                    <div style="font-size: 14px;">Upload a file or refresh to load borrower data</div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    // Collect all borrowers from all categories
+    const allBorrowers = [];
+    const byDate = currentKpiData.detailed_breakdown.by_due_date_category;
+
+    Object.values(byDate).forEach(borrowersList => {
+        if (Array.isArray(borrowersList)) {
+            allBorrowers.push(...borrowersList);
+        }
+    });
+
+    if (allBorrowers.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="9" style="padding: 60px; text-align: center; color: #9ca3af;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
+                    <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No borrowers found</div>
+                    <div style="font-size: 14px;">Upload a file to get started</div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    // Populate table rows
+    tableBody.innerHTML = '';
+    allBorrowers.forEach((borrower, index) => {
+        const row = document.createElement('tr');
+        row.style.cssText = 'border-bottom: 1px solid #e5e7eb; transition: background 0.2s;';
+        row.onmouseenter = () => row.style.background = '#f9fafb';
+        row.onmouseleave = () => row.style.background = 'transparent';
+
+        const paymentConf = borrower.payment_confirmation || '-';
+        const followUpDate = borrower.follow_up_date || '-';
+        const lastDate = borrower['LAST DUE REVD DATE'] || borrower['LAST DUE/REVD DATE'] || borrower.LAST_PAID_DATE || borrower.DUE_DATE || '-';
+        const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+        const emi = (borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+        // Style payment confirmation based on intent
+        let paymentConfStyle = 'padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 12px; white-space: nowrap;';
+
+        switch (paymentConf) {
+            case 'Paid':
+                // Dark green - payment completed
+                paymentConfStyle += 'background: #d1fae5; color: #065f46;';
+                break;
+            case 'Will Pay':
+                // Light green - positive commitment
+                paymentConfStyle += 'background: #dcfce7; color: #166534;';
+                break;
+            case 'Needs Extension':
+                // Orange - needs attention
+                paymentConfStyle += 'background: #fed7aa; color: #9a3412;';
+                break;
+            case 'Dispute':
+                // Red - requires immediate action
+                paymentConfStyle += 'background: #fee2e2; color: #991b1b;';
+                break;
+            case 'No Response':
+                // Gray - no engagement
+                paymentConfStyle += 'background: #e5e7eb; color: #6b7280;';
+                break;
+            default:
+                // Default gray for pending/unknown
+                paymentConfStyle += 'background: #f3f4f6; color: #9ca3af;';
+        }
+
+        row.innerHTML = `
+            <td style="padding: 16px; font-weight: 500;">${borrower.NO || '-'}</td>
+            <td style="padding: 16px; font-weight: 600; color: #1f2937;">${borrower.BORROWER || '-'}</td>
+            <td style="padding: 16px; color: #059669; font-weight: 600;">₹${amount}</td>
+            <td style="padding: 16px;">${borrower.cell1 || borrower.MOBILE || '-'}</td>
+            <td style="padding: 16px;">₹${emi}</td>
+            <td style="padding: 16px; text-transform: capitalize;">${borrower.preferred_language || borrower.LANGUAGE || 'English'}</td>
+            <td style="padding: 16px;">
+                <span style="${paymentConfStyle}">${paymentConf}</span>
+            </td>
+            <td style="padding: 16px; font-weight: 500; color: #4b5563;">${followUpDate}</td>
+            <td style="padding: 16px; color: #6b7280;">${lastDate}</td>
+        `;
+
+        tableBody.appendChild(row);
+    });
+}
+
+// Export CSV functionality
+async function handleExportCSV() {
+    showLoading(true);
+    try {
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/data_ingestion/export/csv`, {
+            method: 'GET'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to export CSV');
+        }
+
+        // Get the CSV content
+        const blob = await response.blob();
+
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `borrowers_report_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+
+        // Cleanup
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showNotification('CSV exported successfully!', 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        if (error.message !== 'Authentication failed') {
+            showNotification('Error exporting CSV', 'error');
+        }
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Add event listeners for reports functionality
+document.addEventListener('DOMContentLoaded', () => {
+    // Export CSV button
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', handleExportCSV);
+    }
+
+    // Refresh data button
+    const refreshDataBtn = document.getElementById('refreshDataBtn');
+    if (refreshDataBtn) {
+        refreshDataBtn.addEventListener('click', async () => {
+            await fetchData();
+            populateReportsTable();
+            showNotification('Data refreshed successfully!', 'success');
+        });
+    }
+});
