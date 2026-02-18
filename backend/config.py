@@ -16,7 +16,9 @@ class Settings:
     
     # ---------- Gemini AI ----------
     # GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")  # Alternative name
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()  # Alternative name
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+
     
     # ---------- Vonage Configuration ----------
     VONAGE_API_KEY = os.getenv("VONAGE_API_KEY", "")

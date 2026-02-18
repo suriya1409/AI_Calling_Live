@@ -12,6 +12,9 @@ from app.ai_calling.service import (
     get_call_data_store,
     gemini_client,
     analyze_conversation_with_gemini,
+    analyze_conversation_with_groq,
+    calculate_follow_up_schedule,
+    determine_report_outcomes,
     ConversationHandler
 )
 from config import settings
@@ -81,6 +84,7 @@ class BorrowerInfo(BaseModel):
     NO: str
     cell1: str
     preferred_language: str = "en-IN"
+    intent_for_testing: Optional[str] = Field(None, description="Intent for dummy call testing: normal, abusive, threatening, stop_calling")
 
 class BulkCallRequest(BaseModel):
     borrowers: List[BorrowerInfo]
@@ -91,6 +95,7 @@ class SingleCallRequest(BaseModel):
     language: str = "en-IN"
     borrower_id: Optional[str] = None
     use_dummy_data: bool = True
+    intent_for_testing: Optional[str] = Field(None, description="Intent for dummy call testing: normal, abusive, threatening, stop_calling")
 
 class CallResponse(BaseModel):
     success: bool
@@ -103,6 +108,13 @@ class CallResponse(BaseModel):
     is_dummy: bool = False
     ai_analysis: Optional[dict] = None
     conversation: Optional[List[dict]] = None
+    mid_call: bool = False
+    next_step_summary: Optional[str] = None
+    email_to_manager_preview: Optional[dict] = None
+    require_manual_process: bool = False
+    payment_confirmation: Optional[str] = None
+    follow_up_date: Optional[str] = None
+    call_frequency: Optional[str] = None
 
 class BulkCallResponse(BaseModel):
     total_requests: int
@@ -116,43 +128,238 @@ class BulkCallResponse(BaseModel):
 # ============================================================
 
 DUMMY_CONVERSATIONS = {
-    "en-IN": {
-        "conversation": [
-            {"speaker": "AI", "text": "Hello, I am calling regarding your loan payment. May I know the status?"},
-            {"speaker": "User", "text": "I will pay by the 12th of February."},
-            {"speaker": "AI", "text": "Thank you. We have noted that down. Have a great day."}
+    "normal": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment. May I know your current payment status?"},
+            {"speaker": "User", "text": "I will pay day after tomorrow, is it fine?"},
+            {"speaker": "AI", "text": "Thank you. Could you confirm the specific date?"},
+            {"speaker": "User", "text": "I will be paying it on 18th February 2026."},
+            {"speaker": "AI", "text": "Thank you, we will look forward to it. Good bye."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं। कृपया अपनी वर्तमान भुगतान स्थिति बताएं?"},
+            {"speaker": "User", "text": "मैं परसों पेमेंट कर दूंगा, ठीक है?"},
+            {"speaker": "AI", "text": "धन्यवाद। क्या आप कृपया विशिष्ट तारीख बता सकते हैं?"},
+            {"speaker": "User", "text": "मैं 18 फरवरी को भुगतान कर दूंगा।"},
+            {"speaker": "AI", "text": "धन्यवाद। हम आपके भुगतान का इंतजार करेंगे।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன். உங்கள் தற்போதைய கட்டண நிலையை தயவுசெய்து கூறுங்கள்?"},
+            {"speaker": "User", "text": "நான் நாளை மறுநாள் செலுத்துகிறேன், சரியா?"},
+            {"speaker": "AI", "text": "நன்றி. குறிப்பிட்ட தேதியை கூற முடியுமா?"},
+            {"speaker": "User", "text": "நான் பிப்ரவரி 18 அன்று செலுத்துவேன்."},
+            {"speaker": "AI", "text": "நன்றி. உங்கள் கட்டணத்திற்காக காத்திருக்கிறோம்."}
         ]
     },
-    "hi-IN": {
-        "conversation": [
-            {"speaker": "AI", "text": "नमस्ते, मैं आपके लोन भुगतान के बारे में कॉल कर रहा हूं। स्थिति क्या है?"},
-            {"speaker": "User", "text": "मैं 12 फरवरी तक भुगतान कर दूंगा।"},
-            {"speaker": "AI", "text": "धन्यवाद। हमने इसे नोट कर लिया है। आपका दिन शुभ हो।"}
+    "abusive": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment."},
+            {"speaker": "User", "text": "Why are you calling me again? You guys are useless! Stop wasting my time, you idiots."},
+            {"speaker": "AI", "text": "Sir, please maintain professional language so I can assist you better."},
+            {"speaker": "User", "text": "Go away! I don't want to talk to you."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं।"},
+            {"speaker": "User", "text": "तुम लोग फिर से क्यों कॉल कर रहे हो? तुम सब बेकार हो! मेरा समय बर्बाद करना बंद करो, बेवकूफों।"},
+            {"speaker": "AI", "text": "श्रीमान, कृपया पेशेवर भाषा बनाए रखें ताकि मैं आपकी बेहतर सहायता कर सकूं।"},
+            {"speaker": "User", "text": "चले जाओ! मैं तुमसे बात नहीं करना चाहता।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன்."},
+            {"speaker": "User", "text": "ஏன் மீண்டும் அழைக்கிறீர்கள்? நீங்கள் அனைவரும் பயனற்றவர்கள்! என் நேரத்தை வீணடிக்காதீர்கள், முட்டாள்களே."},
+            {"speaker": "AI", "text": "ஐயா, தயவுசெய்து மரியாதையான மொழியைப் பயன்படுத்துங்கள்."},
+            {"speaker": "User", "text": "போய்விடு! நான் உன்னிடம் பேச விரும்பவில்லை."}
         ]
     },
-    "ta-IN": {
-        "conversation": [
-            {"speaker": "AI", "text": "வணக்கம், உங்கள் கடன் செலுத்துதல் குறித்து அழைக்கிறேன். நிலை என்ன?"},
-            {"speaker": "User", "text": "பிப்ரவரி 12-க்குள் செலுத்திவிடுகிறேன்."},
-            {"speaker": "AI", "text": "நன்றி. குறித்துக்கொண்டோம். இனிய நாள்."}
+    "threatening": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment."},
+            {"speaker": "User", "text": "If you call me one more time, I will find out where your office is and come there with my friends. You will regret it."},
+            {"speaker": "AI", "text": "Sir, I must inform you that this call is recorded. Please refrain from making threats."},
+            {"speaker": "User", "text": "Record whatever you want. Just stay away from me."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं।"},
+            {"speaker": "User", "text": "अगर तुमने मुझे एक बार और कॉल किया, तो मैं पता लगा लूंगा कि तुम्हारा ऑफिस कहां है और अपने दोस्तों के साथ वहां आऊंगा। तुम पछताओगे।"},
+            {"speaker": "AI", "text": "श्रीमान, मुझे आपको सूचित करना चाहिए कि यह कॉल रिकॉर्ड की जा रही है। कृपया धमकी देने से बचें।"},
+            {"speaker": "User", "text": "जो चाहो रिकॉर्ड करो। बस मुझसे दूर रहो।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன்."},
+            {"speaker": "User", "text": "இன்னொரு முறை அழைத்தால், உங்கள் அலுவலகம் எங்கே என்று கண்டுபிடித்து என் நண்பர்களுடன் அங்கு வருவேன். நீங்கள் வருத்தப்படுவீர்கள்."},
+            {"speaker": "AI", "text": "ஐயா, இந்த அழைப்பு பதிவு செய்யப்படுகிறது என்பதை நான் உங்களுக்குத் தெரிவிக்க வேண்டும். அச்சுறுத்தல் விடுக்க வேண்டாம்."},
+            {"speaker": "User", "text": "நீங்கள் விரும்புவதைப் பதிவு செய்யுங்கள். என்னிடமிருந்து விலகி இருங்கள்."}
         ]
+    },
+    "stop_calling": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment."},
+            {"speaker": "User", "text": "Listen to me carefully. I am telling you to stop calling me. Never call this number again."},
+            {"speaker": "AI", "text": "I will pass this request to my supervisor. Thank you for your time."},
+            {"speaker": "User", "text": "Just do it and don't call back."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं।"},
+            {"speaker": "User", "text": "मेरी बात ध्यान से सुनो। मैं तुम्हें कॉल करना बंद करने के लिए कह रहा हूँ। इस नंबर पर दोबारा कभी कॉल मत करना।"},
+            {"speaker": "AI", "text": "मैं यह अनुरोध अपने सुपरवाइजर को भेज दूंगा। आपके समय के लिए धन्यवाद।"},
+            {"speaker": "User", "text": "बस इसे करो और वापस कॉल मत करो।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன்."},
+            {"speaker": "User", "text": "நான் சொல்வதை கவனமாக கேளுங்கள். என்னை அழைப்பதை நிறுத்துங்கள். இந்த எண்ணிற்கு மீண்டும் அழைக்க வேண்டாம்."},
+            {"speaker": "AI", "text": "இந்த கோரிக்கையை எனது மேற்பார்வையாளருக்கு அனுப்புகிறேன். உங்கள் நேரத்திற்கு நன்றி."},
+            {"speaker": "User", "text": "அதைச் செய்துவிட்டு மீண்டும் அழைக்க வேண்டாம்."}
+        ]
+    },
+    "paid": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment."},
+            {"speaker": "User", "text": "But I already paid the amount yesterday morning."},
+            {"speaker": "AI", "text": "Could you please tell me the transaction reference number or through which mode you paid?"},
+            {"speaker": "User", "text": "I paid via UPI. I have the screenshot also."},
+            {"speaker": "AI", "text": "Thank you. I will inform the team to verify this. Have a good day."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं।"},
+            {"speaker": "User", "text": "लेकिन मैंने कल सुबह ही भुगतान कर दिया है।"},
+            {"speaker": "AI", "text": "क्या आप मुझे ट्रांजैक्शन नंबर बता सकते हैं या आपने किस माध्यम से भुगतान किया है?"},
+            {"speaker": "User", "text": "मैंने UPI के ज़रिए पेमेंट किया है। मेरे पास स्क्रीनशॉट भी है।"},
+            {"speaker": "AI", "text": "धन्यवाद। मैं टीम को इसे सत्यापित करने के लिए कहूंगा। आपका दिन शुभ हो।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன்."},
+            {"speaker": "User", "text": "ஆனால் நான் ஏற்கனவே நேற்று காலையிலேயே பணம் செலுத்திவிட்டேன்."},
+            {"speaker": "AI", "text": "பரிவர்த்தனை குறிப்பு எண் அல்லது எந்த முறையில் பணம் செலுத்தினீர்கள் என்று தயவுசெய்து கூற முடியுமா?"},
+            {"speaker": "User", "text": "நான் UPI மூலம் பணம் செலுத்தினேன். என்னிடம் ஸ்கிரீன்ஷாட்டும் உள்ளது."},
+            {"speaker": "AI", "text": "நன்றி. இதைச் சரிபார்க்க குழுவிடம் தெரிவிக்கிறேன். நல்ல நாள்."}
+        ]
+    },
+    "needs_extension": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment."},
+            {"speaker": "User", "text": "I am facing some financial issues right now. Can I get an extension for two weeks?"},
+            {"speaker": "AI", "text": "I understand. Until what date exactly are you requesting an extension?"},
+            {"speaker": "User", "text": "Please give me time until 10th March 2026. I will surely pay then."},
+            {"speaker": "AI", "text": "I will note down your request for 10th March. Our manager will review it. Thank you."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं।"},
+            {"speaker": "User", "text": "मुझे अभी कुछ आर्थिक तंगी है। क्या मुझे दो हफ्ते का समय और मिल सकता है?"},
+            {"speaker": "AI", "text": "मैं समझता हूँ। आप ठीक किस तारीख तक का समय मांग रहे हैं?"},
+            {"speaker": "User", "text": "कृपया मुझे 10 मार्च 2026 तक का समय दें। मैं तब निश्चित रूप से भुगतान कर दूंगा।"},
+            {"speaker": "AI", "text": "मैं 10 मार्च के लिए आपका अनुरोध नोट कर लेता हूँ। हमारे मैनेजर इसकी समीक्षा करेंगे। धन्यवाद।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன்."},
+            {"speaker": "User", "text": "எனக்கு இப்போது சில நிதிச் சிக்கல்கள் உள்ளன. எனக்கு இரண்டு வார கால நீட்டிப்பு கிடைக்குமா?"},
+            {"speaker": "AI", "text": "எனக்கு புரிகிறது. எந்த தேதி வரை உங்களுக்கு கால அவகாசம் தேவை?"},
+            {"speaker": "User", "text": "தயவுசெய்து எனக்கு மார்ச் 10, 2026 வரை அவகாசம் கொடுங்கள். நான் அப்போது கண்டிப்பாக செலுத்துவேன்."},
+            {"speaker": "AI", "text": "மார்ச் 10-க்கான உங்கள் கோரிக்கையை நான் குறித்துக் கொள்கிறேன். எங்கள் மேலாளர் இதை ஆய்வு செய்வார். நன்றி."}
+        ]
+    },
+    "dispute": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment."},
+            {"speaker": "User", "text": "I don't agree with the interest amount you have calculated. It's wrong according to my papers."},
+            {"speaker": "AI", "text": "I see. Could you explain what exactly is the discrepancy?"},
+            {"speaker": "User", "text": "Your team promised a lower rate but now you are charging more. I won't pay until this is fixed."},
+            {"speaker": "AI", "text": "I will escalate this dispute to our manual process for detailed investigation. Thank you."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं।"},
+            {"speaker": "User", "text": "मैं आपके द्वारा कैलकुलेट किए गए ब्याज की राशि से सहमत नहीं हूं। यह मेरे कागजों के हिसाब से गलत है।"},
+            {"speaker": "AI", "text": "अच्छा। क्या आप बता सकते हैं कि असल में क्या अंतर है?"},
+            {"speaker": "User", "text": "आपकी टीम ने कम रेट का वादा किया था लेकिन अब आप ज़्यादा चार्ज कर रहे हैं। जब तक यह ठीक नहीं होगा, मैं भुगतान नहीं करूँगा।"},
+            {"speaker": "AI", "text": "मैं इस विवाद को विस्तृत जांच के लिए हमारी मैनुअल प्रोसेस में भेज रहा हूँ। धन्यवाद।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன்."},
+            {"speaker": "User", "text": "நீங்கள் கணக்கிட்டுள்ள வட்டித் தொகையை நான் ஏற்கவில்லை. என் ஆவணங்களின்படி அது தவறு."},
+            {"speaker": "AI", "text": "சரி. சரியாக என்ன வித்தியாசம் என்று விளக்க முடியுமா?"},
+            {"speaker": "User", "text": "உங்கள் குழு குறைந்த வட்டி விகிதத்தை உறுதி அளித்தது, ஆனால் இப்போது நீங்கள் அதிகமாக வசூலிக்கிறீர்கள். இதை சரிசெய்யும் வரை நான் பணம் செலுத்த மாட்டேன்."},
+            {"speaker": "AI", "text": "விரிவான விசாரணைக்காக இந்த விவாதத்தை எங்கள் மேனுவல் செயல்முறைக்கு மாற்றுகிறேன். நன்றி."}
+        ]
+    },
+    "no_response": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency... Hello? Can you hear me?"},
+            {"speaker": "User", "text": "... [silence] ..."},
+            {"speaker": "AI", "text": "I am calling regarding your loan payment. Are you there?"},
+            {"speaker": "User", "text": "... [muffled noise, no clear words] ..."},
+            {"speaker": "AI", "text": "Since I cannot get a clear response, I will have our team contact you later. Goodbye."}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से... नमस्ते? क्या आप मुझे सुन पा रहे हैं?"},
+            {"speaker": "User", "text": "... [मौन] ..."},
+            {"speaker": "AI", "text": "मैं आपके लोन भुगतान के संबंध में कॉल कर रहा हूं। क्या आप वहां हैं?"},
+            {"speaker": "User", "text": "... [अस्पष्ट शोर, कोई शब्द नहीं] ..."},
+            {"speaker": "AI", "text": "चूंकि मुझे कोई स्पष्ट जवाब नहीं मिल रहा है, इसलिए हमारी टीम आपसे बाद में संपर्क करेगी। नमस्ते।"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து... வணக்கம்? நான் பேசுவது கேட்கிறதா?"},
+            {"speaker": "User", "text": "... [நிசப்தம்] ..."},
+            {"speaker": "AI", "text": "உங்கள் கடன் செலுத்துதல் குறித்து நான் அழைக்கிறேன். நீங்கள் லைனில் இருக்கிறீர்களா?"},
+            {"speaker": "User", "text": "... [தெளிவற்ற சத்தம், வார்த்தைகள் இல்லை] ..."},
+            {"speaker": "AI", "text": "தங்களிடமிருந்து தெளிவான பதில் கிடைக்காததால், எங்கள் குழுவினர் பின்னர் உங்களைத் தொடர்புகொள்வார்கள். வணக்கம்."}
+        ]
+    },
+    "mid_call": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment."},
+            {"speaker": "User", "text": "Hello, who is this? I can't hear you clearly..."},
+            {"speaker": "AI", "text": "I am calling about your overdue loan amount of ₹5,000. Can you hear me now?"},
+            {"speaker": "User", "text": "Yes, I hear you but I'm in a meeting right now, I will— [Call Disconnected]"}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं।"},
+            {"speaker": "User", "text": "नमस्ते, कौन बोल रहा है? मुझे आपकी आवाज़ साफ़ नहीं आ रही..."},
+            {"speaker": "AI", "text": "मैं आपके ₹5,000 के बकाया लोन के बारे में बात कर रहा हूँ। क्या अब आप मुझे सुन पा रहे हैं?"},
+            {"speaker": "User", "text": "हां, सुनाई दे रहा है पर मैं अभी मीटिंग में हूँ, मैं— [कॉल कट गया]"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன்."},
+            {"speaker": "User", "text": "வணக்கம், யார் பேசுகிறீர்கள்? உங்கள் குரல் தெளிவாக கேட்கவில்லை..."},
+            {"speaker": "AI", "text": "உங்கள் ₹5,000 கடன் நிலுவைத் தொகை குறித்து நான் அழைக்கிறேன். இப்போது கேட்கிறதா?"},
+            {"speaker": "User", "text": "ஆம், கேட்கிறது ஆனால் நான் இப்போது ஒரு கூட்டத்தில் இருக்கிறேன், நான்— [அழைப்பு துண்டிக்கப்பட்டது]"}
+        ]
+    },
+    "failed_pickup": {
+        "en-IN": [],
+        "hi-IN": [],
+        "ta-IN": []
     }
 }
+
 
 # ============================================================
 # CORE LOGIC
 # ============================================================
 
-async def create_dummy_call(user_id: str, phone_number: str, language: str, borrower_id: str = None) -> dict:
+# Global semaphore to limit concurrent AI analysis requests (prevent 429)
+ai_semaphore = asyncio.Semaphore(2)
+
+async def create_dummy_call(user_id: str, phone_number: str, language: str, borrower_id: str = None, intent: str = "normal") -> dict:
     """Async helper to generate a dummy call and save to DB using model functions with User Isolation"""
     try:
         call_uuid = f"dummy-{uuid.uuid4()}"
         start_time = datetime.now()
         
-        if language not in DUMMY_CONVERSATIONS:
-            return {"success": False, "error": f"No dummy template for {language}"}
+        # Select intent category
+        intent_cat = intent if intent in DUMMY_CONVERSATIONS else "normal"
+        
+        # SPECIAL CASE: Simulate Failed Pickup (Zero Duration)
+        if intent_cat == "failed_pickup":
+            return {
+                "success": False,
+                "error": "Call failed to connect (Simulation)",
+                "duration_seconds": 0,
+                "call_uuid": call_uuid
+            }
             
-        template = DUMMY_CONVERSATIONS[language]["conversation"]
+        # Select language within that intent
+        lang_key = language if language in DUMMY_CONVERSATIONS[intent_cat] else "en-IN"
+        
+        template = DUMMY_CONVERSATIONS[intent_cat][lang_key]
         conversation = []
         current_time = start_time
         
@@ -161,10 +368,21 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             conversation.append({
                 **entry,
                 "timestamp": current_time.isoformat(),
-                "language": language
+                "language": lang_key
             })
             
-        ai_analysis = analyze_conversation_with_gemini(conversation)
+        # Use semaphore to limit global concurrent AI requests
+        async with ai_semaphore:
+            # Consistent with save_transcript, use Groq for the report logic
+            ai_analysis = await analyze_conversation_with_groq(conversation)
+            if not ai_analysis:
+                ai_analysis = await analyze_conversation_with_gemini(conversation)
+        
+        # Extract payment information from AI analysis
+        intent = ai_analysis.get("intent", "No Response") if ai_analysis else "No Response"
+        payment_date = ai_analysis.get("payment_date") if ai_analysis else None
+        extension_date = ai_analysis.get("extension_date") if ai_analysis else None
+        is_mid_call = ai_analysis.get("mid_call", False) if ai_analysis else False
         
         transcript_data = {
             "call_uuid": call_uuid,
@@ -176,19 +394,54 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             "preferred_language": language,
             "conversation": conversation,
             "ai_analysis": ai_analysis,
-            "is_dummy": True
+            "is_dummy": True,
+            "mid_call": is_mid_call
         }
         
         # Save Session (Standalone function with isolation)
         await create_call_session(user_id, transcript_data)
         
+        # Set payment confirmation based on intent
+        payment_confirmation = intent
+        
+        # Determine Next Step Summary and Email Draft logic
+        next_step_summary = ""
+        email_draft = None
+        require_manual_process = False
+        
+        # Get borrower details for email (dummy/placeholder if not available)
+        borrower_name = "Borrower"
+        if borrower_id:
+            # We could fetch from DB, but for MVP we use placeholder
+            borrower_name = f"Borrower {borrower_id}"
+            
+        # 1. Get current borrower to check category
+        borrower_in_db = await get_borrower_by_no(user_id, borrower_id) if borrower_id else None
+        category = borrower_in_db.get("Payment_Category", "Consistent") if borrower_in_db else "Consistent"
+        borrower_name = borrower_in_db.get("BORROWER", "Borrower") if borrower_in_db else f"Borrower {borrower_id}"
+        
+        # 2. Use helper to determine all reporting values
+        outcomes = determine_report_outcomes(
+            intent,
+            payment_date,
+            category,
+            borrower_name=borrower_name,
+            borrower_id=borrower_id or "",
+            is_mid_call=is_mid_call
+        )
+
         # Update Borrower (Standalone function with isolation)
         if borrower_id:
             await update_borrower(user_id, borrower_id, {
                 "call_completed": True,
                 "call_in_progress": False,
                 "transcript": conversation,
-                "ai_summary": ai_analysis.get("summary", "Done") if ai_analysis else "Done"
+                "ai_summary": outcomes["next_step_summary"] or ai_analysis.get("summary", "Done"),
+                "payment_confirmation": outcomes["payment_confirmation"],
+                "follow_up_date": outcomes["follow_up_date"],
+                "call_frequency": outcomes["call_frequency"],
+                "require_manual_process": outcomes["require_manual_process"],
+                "email_to_manager_preview": outcomes["email_to_manager_preview"]
             })
             
         return {
@@ -196,34 +449,93 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             "call_uuid": call_uuid,
             "status": "completed",
             "ai_analysis": ai_analysis,
-            "conversation": conversation
+            "conversation": conversation,
+            "payment_confirmation": outcomes["payment_confirmation"],
+            "follow_up_date": outcomes["follow_up_date"],
+            "call_frequency": outcomes["call_frequency"],
+            "next_step_summary": outcomes["next_step_summary"],
+            "email_to_manager_preview": outcomes["email_to_manager_preview"],
+            "require_manual_process": outcomes["require_manual_process"],
+            "mid_call": is_mid_call
         }
     except Exception as e:
         logger.error(f"Dummy call error for user {user_id}: {e}")
         return {"success": False, "error": str(e)}
 
 async def process_single_call(user_id: str, borrower: BorrowerInfo, use_dummy_data: bool, normalized_language: str) -> CallResponse:
-    """Process one call async for a specific user"""
-    if use_dummy_data:
-        res = await create_dummy_call(user_id, borrower.cell1, normalized_language, borrower.NO)
-    else:
-        # Note: Real calls currently don't handle user_id in the service layer yet, 
-        # but the DB update at the end of the call should use it.
-        res = make_outbound_call(borrower.cell1, normalized_language, borrower.NO)
+    """Process call with 3 attempts. Continue if duration=0, escalate if disconnected mid-call, or process if successful."""
+    max_attempts = 3
+    last_res = {"success": False, "error": "All attempts failed after 3 tries"}
+    
+    for attempt in range(max_attempts):
+        if use_dummy_data:
+            res = await create_dummy_call(user_id, borrower.cell1, normalized_language, borrower.NO, borrower.intent_for_testing)
+        else:
+            res = make_outbound_call(borrower.cell1, normalized_language, borrower.NO)
         
-    if res.get("success"):
+        last_res = res
+        
+        # Scenario: Duration == 0 (Not picked up/hard error)
+        # We assume success=False or duration_seconds=0 in the actual call data
+        # For dummy, we'll check if it succeeded but has no transcript or duration (though dummy always has)
+        # To simulate a 'no pickup' in dummy, we could use a specific error
+        if not res.get("success"):
+            print(f"❌ Attempt {attempt+1} failed to connect. Retrying...")
+            await asyncio.sleep(1)
+            continue
+            
+        # Scenario: Duration > 0 (Call picked up)
+        if res.get("mid_call"):
+            # if mid_call == True -> Stop and schedule follow-up
+            print(f"⚠️ Call for {borrower.NO} cut mid-conversation. Scheduling follow-up.")
+            break
+        else:
+            # if mid_call == False -> Processed successfully and break
+            print(f"✅ Call for {borrower.NO} completed successfully on attempt {attempt+1}.")
+            break
+            
+    # After 3 attempts, if last_res is still unsuccessful (failed to connect all 3 times)
+    if not last_res.get("success"):
+        email_failure_preview = {
+            "to": "Area Manager",
+            "subject": f"Action Required: Multiple Call Failures - Borrower {borrower.NO}",
+            "body": f"Hi Area Manager,\n\nWe attempted to call Borrower (No: {borrower.NO}) 3 times, but all calls failed to connect (Zero duration).\n\nWe are escalating this to the Manual Process for you to initiate manual intervention.\n\nBest regards,\nAI Collection System"
+        }
+        
+        # Update borrower status to failed but with escalation
+        await update_borrower(user_id, borrower.NO, {
+            "call_completed": True,
+            "ai_summary": "All call attempts failed to connect (3 retries). Initiating Manual Process.",
+            "require_manual_process": True,
+            "email_to_manager_preview": email_failure_preview
+        })
+        
         return CallResponse(
-            success=True,
-            call_uuid=res.get("call_uuid"),
-            status=res.get("status"),
-            to_number=borrower.cell1,
-            language=normalized_language,
+            success=True, # Mark as 'Success' in terms of processing finished
             borrower_id=borrower.NO,
-            is_dummy=use_dummy_data,
-            ai_analysis=res.get("ai_analysis"),
-            conversation=res.get("conversation")
+            ai_analysis={"summary": "All attempts failed."},
+            status="Failed pickup",
+            next_step_summary="All call attempts failed after 3 tries. Escalating to Manual Process.",
+            email_to_manager_preview=email_failure_preview,
+            require_manual_process=True
         )
-    return CallResponse(success=False, error=res.get("error"), borrower_id=borrower.NO)
+        
+    # If it was a success (either full completion or mid-call escalation)
+    return CallResponse(
+        success=True,
+        call_uuid=last_res.get("call_uuid"),
+        status=last_res.get("status"),
+        to_number=borrower.cell1,
+        language=normalized_language,
+        borrower_id=borrower.NO,
+        is_dummy=use_dummy_data,
+        ai_analysis=last_res.get("ai_analysis"),
+        conversation=last_res.get("conversation"),
+        mid_call=last_res.get("mid_call", False),
+        next_step_summary=last_res.get("next_step_summary"),
+        email_to_manager_preview=last_res.get("email_to_manager_preview"),
+        require_manual_process=last_res.get("require_manual_process", False)
+    )
 
 # ============================================================
 # API ENDPOINTS
@@ -272,7 +584,7 @@ async def make_single_call(request: SingleCallRequest, current_user: dict = Depe
     user_id = str(current_user["_id"])
     lang = normalize_language(request.language)
     if request.use_dummy_data:
-        res = await create_dummy_call(user_id, request.to_number, lang, request.borrower_id)
+        res = await create_dummy_call(user_id, request.to_number, lang, request.borrower_id, request.intent_for_testing)
     else:
         res = make_outbound_call(request.to_number, lang, request.borrower_id)
         

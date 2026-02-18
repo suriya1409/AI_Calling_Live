@@ -17,6 +17,8 @@ from io import BytesIO
 from datetime import datetime
 from queue import Queue
 import re
+import random
+import asyncio
 
 import requests
 from vonage import Vonage, Auth
@@ -29,6 +31,13 @@ try:
 except ImportError:
     print("⚠️  WARNING: google-genai not installed. Install with: pip install google-genai")
     GEMINI_AVAILABLE = False
+
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    print("⚠️  WARNING: groq not installed. Install with: pip install groq")
+    GROQ_AVAILABLE = False
 
 from config import settings
 
@@ -68,10 +77,162 @@ if GEMINI_AVAILABLE and settings.GEMINI_API_KEY:
 else:
     print("[GEMINI] ⚠️  Gemini not configured - AI analysis will be disabled")
 
+# Initialize Groq AI client
+groq_client = None
+print(f"[DEBUG] GROQ_AVAILABLE: {GROQ_AVAILABLE}")
+print(f"[DEBUG] settings.GROQ_API_KEY present: {bool(settings.GROQ_API_KEY)}")
+
+if GROQ_AVAILABLE and settings.GROQ_API_KEY:
+    if "your_groq_api_key_here" in settings.GROQ_API_KEY:
+        print("[GROQ] ⚠️  Groq API key is still the placeholder. Please update .env")
+    else:
+        try:
+            from groq import AsyncGroq
+            groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            print("[GROQ] ✅ Async Groq AI client initialized")
+        except Exception as e:
+            print(f"[GROQ] ⚠️  Failed to initialize: {e}")
+            groq_client = None
+else:
+    if not GROQ_AVAILABLE:
+        print("[GROQ] ⚠️  Groq library not installed.")
+    if not settings.GROQ_API_KEY:
+        print("[GROQ] ⚠️  GROQ_API_KEY not found in settings.")
+    print("[GROQ] ⚠️  Groq not configured - fallback analysis will be disabled")
+
 
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
+
+def calculate_follow_up_schedule(category):
+    """
+    Calculate follow-up dates based on category (Skipping Weekends):
+    - Consistent: 1 call next week (business day)
+    - Inconsistent: 3 calls (next 3 business days)
+    - Overdue: Daily (next 7 business days)
+    """
+    from datetime import timedelta
+    today = datetime.now()
+    dates = []
+    
+    category = (category or "").lower()
+    
+    if "inconsistent" in category:
+        required_dates = 3
+        desc = "3 calls/week"
+    elif "overdue" in category:
+        required_dates = 7
+        desc = "Daily (Business Days)"
+    else:
+        # Consistent: Just 1 call approximately a week later
+        required_dates = 1
+        # Start looking from 7 days ahead
+        today = today + timedelta(days=6) 
+        desc = "1 call/week"
+        
+    current_date = today
+    count = 0
+    
+    while count < required_dates:
+        # Move to next day
+        current_date += timedelta(days=1)
+        
+        # Check if Sat (5) or Sun (6)
+        if current_date.weekday() >= 5:
+            continue
+            
+        dates.append(current_date.strftime("%Y-%m-%d"))
+        count += 1
+        
+    return ", ".join(dates), desc
+
+def determine_report_outcomes(intent, payment_date, category, borrower_name="Borrower", borrower_id="", is_mid_call=False):
+    """
+    Centralized logic to determine:
+    - payment_confirmation
+    - follow_up_date
+    - call_frequency
+    - require_manual_process
+    - email_to_manager_preview
+    - next_step_summary
+    """
+    from datetime import datetime, timedelta
+    
+    intent = (intent or "No Response").strip()
+    category = (category or "Consistent").strip()
+    
+    next_step_summary = ""
+    email_draft = None
+    require_manual_process = False
+    payment_confirmation = intent
+    
+    # 1. Handle Dates & Freq
+    if is_mid_call:
+        # Re-trigger Next Day
+        today = datetime.now()
+        next_day = today + timedelta(days=1)
+        if next_day.weekday() >= 5: # Skip to Monday
+            next_day += timedelta(days=(7 - next_day.weekday()))
+        follow_up_date = next_day.strftime("%Y-%m-%d")
+        call_frequency = "1 call (Retry)"
+        next_step_summary = "The borrower hung up mid-sentence. System scheduled a follow-up retry for the next business day."
+    elif payment_date and payment_date.lower() != "null":
+        payment_confirmation = payment_date
+        follow_up_date = payment_date
+        call_frequency = "1 call (Verify)"
+    else:
+        follow_up_date, call_frequency = calculate_follow_up_schedule(category)
+
+    # 2. Logic for Manual Process & Email Previews
+    escalation_intents = ["Paid", "Dispute", "No Response", "Abusive Language", "Threatening Language", "Stop Calling"]
+    
+    if intent in escalation_intents:
+        require_manual_process = True
+        
+        if intent == "Paid":
+            next_step_summary = f"Borrower {borrower_name} claims payment made. Please verify."
+            subject = f"Payment Verification Required: {borrower_name}"
+            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) claims they have already paid. Please verify the transaction.\n\nBest regards,\nAI System"
+        elif intent == "Dispute":
+            next_step_summary = "Borrower is disputing the loan payment. Escalating for manual investigation."
+            subject = f"Payment Dispute: {borrower_name}"
+            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) is disputing the loan amount/terms. Manual investigation required.\n\nBest regards,\nAI System"
+        elif intent == "No Response":
+            next_step_summary = "No clear response from borrower. Escalating for manual follow-up."
+            subject = f"No Response Escalation: {borrower_name}"
+            body = f"Hi Area Manager,\n\nWe could not get a clear response from {borrower_name} ({borrower_id}). Please follow up manually.\n\nBest regards,\nAI System"
+        elif intent == "Abusive Language":
+            next_step_summary = "Borrower used abusive language. Escalating for manual process."
+            subject = f"Alert: Abusive Language - {borrower_name}"
+            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) was abusive during the call. Initiating manual handling.\n\nBest regards,\nAI System"
+        elif intent == "Threatening Language":
+            next_step_summary = "Borrower used threatening language. Escalating for manual process."
+            subject = f"Security Alert: {borrower_name}"
+            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) was threatening. Please handle this case with priority.\n\nBest regards,\nAI System"
+        elif intent == "Stop Calling":
+            next_step_summary = "Borrower requested to stop calls. Escalating for manual process."
+            subject = f"DNC Request: {borrower_name}"
+            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) requested to stop calling. Please update legal status.\n\nBest regards,\nAI System"
+        
+        email_draft = {"to": "Area Manager", "subject": subject, "body": body}
+
+    elif intent == "Will Pay" or intent == "Needs Extension":
+        require_manual_process = False
+        email_draft = None
+        if payment_date:
+            next_step_summary = f"Borrower committed to pay/extend until {payment_date}."
+        else:
+            next_step_summary = f"Borrower committed to {intent}. Follow-up scheduled."
+
+    return {
+        "payment_confirmation": payment_confirmation,
+        "follow_up_date": follow_up_date,
+        "call_frequency": call_frequency,
+        "require_manual_process": require_manual_process,
+        "email_to_manager_preview": email_draft,
+        "next_step_summary": next_step_summary
+    }
 
 def generate_jwt_token():
     """Generate JWT token for Vonage API"""
@@ -96,21 +257,129 @@ def generate_jwt_token():
 # GEMINI AI ANALYSIS
 # ============================================================
 
-def analyze_conversation_with_gemini(conversation):
+async def analyze_conversation_with_gemini(conversation):
     """
-    Analyze conversation using Gemini AI to extract summary, sentiment, and intent.
+    COMMENTED OUT GEMINI: FORCING GROQ FOR NOW
+    """
+    print("[AI ANALYSIS] 🔄 Forcing Groq fallback as requested...")
+    return await analyze_conversation_with_groq(conversation)
+
+    # if not gemini_client:
+    #     print("[GEMINI] ⚠️  Gemini client not available, skipping analysis")
+    #     return {
+    #         "summary": "AI analysis not available - Gemini API not configured",
+    #         "sentiment": "Neutral",
+    #         "sentiment_reasoning": "Analysis skipped",
+    #         "intent": "No Response",
+    #         "intent_reasoning": "Analysis skipped",
+    #         "payment_date": None
+    #     }
+    
+    # # Prepare conversation text
+    # conversation_text = "\n".join([
+    #     f"{entry['speaker']}: {entry['text']}" 
+    #     for entry in conversation
+    # ])
+    # 
+    # prompt = f"""You are an AI analyst reviewing a phone conversation between a collection agent (AI) and a borrower (User).
+    # 
+    # Analyze this conversation and provide:
+    # 
+    # 1. **SUMMARY**: A concise 2-3 sentence summary of what was discussed.
+    # 
+    # 2. **SENTIMENT**: Classify as Positive, Neutral, or Negative.
+    # 
+    # 3. **INTENT**: Classify as one of the following:
+    #    - **Paid**, **Will Pay**, **Needs Extension**, **Dispute**, **No Response**, **Abusive Language**, **Threatening Language**, **Stop Calling**.
+    # 
+    # 4. **MID_CALL**: Boolean (true/false). Set to true ONLY if the conversation ends abruptly or the borrower hangs up mid-sentence.
+    # 
+    # CONVERSATION:
+    # {conversation_text}
+    # 
+    # Respond in JSON format only with these exact keys:
+    # {{
+    #     "summary": "...",
+    #     "sentiment": "...",
+    #     "sentiment_reasoning": "...",
+    #     "intent": "...",
+    #     "intent_reasoning": "...",
+    #     "payment_date": "YYYY-MM-DD or null",
+    #     "extension_date": "YYYY-MM-DD or null",
+    #     "mid_call": true/false
+    # }}"""
+    # 
+    # 
+    # # Add retry logic for 429 Resource Exhausted
+    # max_retries = 5
+    # base_delay = 3
+    # 
+    # for attempt in range(max_retries):
+    #     try:
+    #         print(f"\n[GEMINI] 🤖 Starting AI analysis (Attempt {attempt+1}/{max_retries})...")
+    #         
+    #         # Use async version of generate_content
+    #         response = await gemini_client.aio.models.generate_content(
+    #             model='gemini-2.0-flash',
+    #             contents=prompt
+    #         )
+    #         
+    #         response_text = response.text.strip()
+    #         
+    #         # Clean JSON
+    #         if "```json" in response_text:
+    #             response_text = response_text.split("```json")[1].split("```")[0].strip()
+    #         elif "```" in response_text:
+    #             response_text = response_text.split("```")[1].split("```")[0].strip()
+    #         
+    #         analysis = json.loads(response_text)
+    #         print(f"[GEMINI] ✅ Analysis completed successfully")
+    #         return analysis
+    # 
+    #     except Exception as e:
+    #         error_str = str(e).lower()
+    #         if "429" in error_str or "resource_exhausted" in error_str:
+    #             if attempt < max_retries - 1:
+    #                 # Exponential backoff with random jitter to avoid thundering herd
+    #                 delay = (base_delay * (2 ** attempt)) + random.uniform(0, 5)
+    #                 print(f"[GEMINI] ⏳ Rate limit hit. Retrying in {delay:.1f}s...")
+    #                 await asyncio.sleep(delay)
+    #                 continue
+    #             else:
+    #                 print(f"[GEMINI] 🚨 Rate limit exhausted. Falling back to Groq...")
+    #                 fallback = await analyze_conversation_with_groq(conversation)
+    #                 if fallback: return fallback
+    #         
+    #         print(f"[GEMINI] ❌ Analysis error: {e}")
+    #         
+    #         if attempt < max_retries - 1:
+    #             await asyncio.sleep(2)
+    #             continue
+    #         
+    #         # Check if it's a 429 error and try fallback
+    #         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+    #             print(f"[GEMINI] 🚨 Rate limit hit. Attempting fallback to Groq...")
+    #             fallback_analysis = await analyze_conversation_with_groq(conversation)
+    #             if fallback_analysis:
+    #                 return fallback_analysis
+    #         
+    #         return {
+    #             "summary": "Unable to analyze conversation",
+    #             "sentiment": "Neutral",
+    #             "intent": "No Response"
+    #         }
+    # 
+    # return {"summary": "Analysis failed", "sentiment": "Neutral", "intent": "No Response"}
+
+
+async def analyze_conversation_with_groq(conversation):
+    """
+    Fallback analysis using Groq AI (Llama 3) when Gemini is unavailable or rate-limited.
     """
     
-    if not gemini_client:
-        print("[GEMINI] ⚠️  Gemini client not available, skipping analysis")
-        return {
-            "summary": "AI analysis not available - Gemini API not configured",
-            "sentiment": "Neutral",
-            "sentiment_reasoning": "Analysis skipped",
-            "intent": "No Response",
-            "intent_reasoning": "Analysis skipped",
-            "payment_date": None
-        }
+    if not groq_client:
+        print("[GROQ] ⚠️  Groq client not available, skipping fallback analysis")
+        return None
     
     # Prepare conversation text
     conversation_text = "\n".join([
@@ -118,68 +387,52 @@ def analyze_conversation_with_gemini(conversation):
         for entry in conversation
     ])
     
+    today_date = datetime.now().strftime("%Y-%m-%d (%A)")
+    
     prompt = f"""You are an AI analyst reviewing a phone conversation between a collection agent (AI) and a borrower (User).
+    
+    Current Date: {today_date}
 
 Analyze this conversation and provide:
-
-1. **SUMMARY**: A concise 2-3 sentence summary of what was discussed.
-
-2. **SENTIMENT**: Classify as Positive, Neutral, or Negative.
-
-3. **INTENT**: Classify as Paid, Will Pay, Needs Extension, Dispute, or No Response.
+1. SUMMARY: A concise 2-3 sentence summary.
+2. SENTIMENT: Positive, Neutral, or Negative.
+3. INTENT: Paid, Will Pay, Needs Extension, Dispute, No Response, Abusive Language, Threatening Language, or Stop Calling.
+4. PAYMENT_DATE: Extract EXACT date if mentioned (YYYY-MM-DD). handling "tomorrow", "next week", etc. relative to {today_date}. If no date, return null.
+5. MID_CALL: Boolean (true/false). Set to true ONLY if the conversation ends abruptly or the borrower hangs up mid-sentence without a professional closing.
 
 CONVERSATION:
 {conversation_text}
 
-Respond in JSON format only:
+Respond in JSON format only with these exact keys:
 {{
     "summary": "...",
     "sentiment": "...",
-    "sentiment_reasoning": "...",
     "intent": "...",
-    "intent_reasoning": "...",
-    "payment_date": "YYYY-MM-DD or null"
+    "payment_date": "YYYY-MM-DD or null",
+    "mid_call": true/false
 }}"""
-    
-    # Add retry logic for 429 Resource Exhausted
-    max_retries = 5
-    base_delay = 3
-    
-    for attempt in range(max_retries):
-        try:
-            print(f"\n[GEMINI] 🤖 Starting AI analysis (Attempt {attempt+1}/{max_retries})...")
-            
-            response = gemini_client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt
-            )
-            
-            response_text = response.text.strip()
-            
-            # Clean JSON
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-            
-            analysis = json.loads(response_text)
-            print(f"[GEMINI] ✅ Analysis completed successfully")
-            return analysis
 
-        except Exception as e:
-            if attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)
-                time.sleep(delay)
-                continue
-            
-            print(f"[GEMINI] ❌ Analysis error: {e}")
-            return {
-                "summary": "Unable to analyze conversation",
-                "sentiment": "Neutral",
-                "intent": "No Response"
-            }
     
-    return {"summary": "Analysis failed", "sentiment": "Neutral", "intent": "No Response"}
+    try:
+        print(f"\n[GROQ] 🤖 Starting fallback AI analysis...")
+        
+        response = await groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that responds in JSON format."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        response_text = response.choices[0].message.content.strip()
+        analysis = json.loads(response_text)
+        print(f"[GROQ] ✅ Analysis completed successfully via fallback")
+        return analysis
+
+    except Exception as e:
+        print(f"[GROQ] ❌ Fallback analysis error: {e}")
+        return None
 
 
 # ============================================================
@@ -365,8 +618,28 @@ def generate_ai_response(user_text, language="en-IN", context=None):
             config=types.GenerateContentConfig(temperature=0.7, max_output_tokens=200)
         )
         return response.text.strip()
-    except:
+    except Exception as e:
+        print(f"[GEMINI] ❌ Response generation error: {e}")
+        
+        # Check if it's a 429 error and try fallback to Groq
+        if groq_client and ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)):
+            print(f"[GEMINI] 🚨 Rate limit hit. Attempting fallback to Groq for response...")
+            try:
+                response = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": sys_prompts.get(language, sys_prompts['en-IN'])},
+                        {"role": "user", "content": f"History:\n{conv_history}\n\nUser: {user_text}"}
+                    ],
+                    max_tokens=200,
+                    temperature=0.7
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as ge:
+                print(f"[GROQ] ❌ Fallback response error: {ge}")
+        
         return FALLBACKS.get(language, FALLBACKS["en-IN"])
+
 
 # ============================================================
 # CONVERSATION HANDLER
@@ -411,10 +684,12 @@ class ConversationHandler:
         """Save transcript using standalone model functions with User Isolation"""
         duration = (datetime.now() - self.start_time).total_seconds()
         
-        ai_analysis = analyze_conversation_with_gemini(self.conversation) if len(self.conversation) > 1 else {
+        # Use Groq for analysis
+        ai_analysis = await analyze_conversation_with_groq(self.conversation) if len(self.conversation) > 1 else {
             "summary": "No meaningful conversation detected",
             "sentiment": "No Response",
-            "intent": "No Response"
+            "intent": "No Response",
+            "payment_date": None
         }
         
         transcript_data = {
@@ -436,12 +711,40 @@ class ConversationHandler:
             
             # Update Borrower if ID exists
             if self.borrower_id and self.user_id:
-                await update_borrower(self.user_id, self.borrower_id, {
+                # 1. Get current borrower to check category
+                from app.table_models.borrowers_table import get_borrower_by_no
+                borrower = await get_borrower_by_no(self.user_id, self.borrower_id)
+                category = borrower.get("Payment_Category", "Consistent") if borrower else "Consistent"
+                
+                # 2. Determine Logic
+                payment_date = ai_analysis.get("payment_date")
+                intent = ai_analysis.get("intent", "No Response")
+                is_mid_call = ai_analysis.get("mid_call", False)
+                borrower_name = borrower.get("BORROWER", "Borrower")
+                
+                outcomes = determine_report_outcomes(
+                    intent, 
+                    payment_date, 
+                    category, 
+                    borrower_name=borrower_name, 
+                    borrower_id=self.borrower_id,
+                    is_mid_call=is_mid_call
+                )
+                
+                update_payload = {
                     "call_completed": True,
                     "call_in_progress": False,
                     "transcript": self.conversation,
-                    "ai_summary": ai_analysis.get('summary', 'Done')
-                })
+                    "ai_summary": outcomes["next_step_summary"] or ai_analysis.get('summary', 'Done'),
+                    "payment_confirmation": outcomes["payment_confirmation"],
+                    "follow_up_date": outcomes["follow_up_date"],
+                    "call_frequency": outcomes["call_frequency"],
+                    "require_manual_process": outcomes["require_manual_process"],
+                    "email_to_manager_preview": outcomes["email_to_manager_preview"]
+                }
+                
+                print(f"[DB] 💾 Saving Borrower Update: {update_payload}")
+                await update_borrower(self.user_id, self.borrower_id, update_payload)
         except Exception as e:
             print(f"[DB] ❌ Isolated Save Error: {e}")
         

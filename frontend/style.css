@@ -1268,3 +1268,47 @@ td {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
 }
+
+/* Action Buttons */
+.manual-btn {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.manual-btn:hover {
+    background: #fecaca;
+    box-shadow: 0 2px 8px rgba(153, 27, 27, 0.1);
+}
+
+.email-mgr-btn {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.email-mgr-btn:hover {
+    background: #bae6fd;
+    box-shadow: 0 2px 8px rgba(3, 105, 161, 0.1);
+}
+
+.intent-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}

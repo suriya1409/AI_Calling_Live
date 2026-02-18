@@ -18,6 +18,7 @@ cryptography
 
 # Google Generative AI (Gemini)
 google-genai
+groq
 
 # HTTP requests
 requests

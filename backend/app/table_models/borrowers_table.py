@@ -50,6 +50,9 @@ async def bulk_upsert_borrowers(user_id: str, borrowers_list: List[Dict[str, Any
             borrower['call_in_progress'] = borrower.get('call_in_progress', False)
             borrower['transcript'] = borrower.get('transcript', [])
             borrower['ai_summary'] = borrower.get('ai_summary', "")
+            borrower['payment_confirmation'] = borrower.get('payment_confirmation', "")
+            borrower['follow_up_date'] = borrower.get('follow_up_date', "")
+            borrower['call_frequency'] = borrower.get('call_frequency', "")
             borrower['updated_at'] = datetime.utcnow()
             
             # Upsert logic: unique per (user_id, NO)
@@ -110,7 +113,10 @@ async def reset_all_borrower_calls(user_id: str) -> int:
             "call_completed": False,
             "call_in_progress": False,
             "transcript": [],
-            "ai_summary": ""
+            "ai_summary": "",
+            "payment_confirmation": "",
+            "follow_up_date": "",
+            "call_frequency": ""
         }}
     )
     return result.modified_count

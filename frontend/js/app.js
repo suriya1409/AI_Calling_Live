@@ -730,7 +730,10 @@ function createCallDataRow(borrower) {
                 <div class="next-steps-text" id="summary-text-${borrower.NO}">
                     ${borrower.ai_summary || 'No call summary yet. Initiate a call to get AI insights.'}
                 </div>
-                <button class="manual-btn">Initiate Manual Process</button>
+                <div class="summary-actions" style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="manual-btn" style="display: ${borrower.require_manual_process ? 'block' : 'none'}">Initiate Manual Process</button>
+                    ${borrower.email_to_manager_preview ? `<button class="email-mgr-btn">Email to Area Manager</button>` : ''}
+                </div>
             </div>
         </div>
     `;
@@ -740,8 +743,62 @@ function createCallDataRow(borrower) {
         wrapper.classList.toggle('expanded');
     });
 
+    // Email Button Listener
+    const emailBtn = wrapper.querySelector('.email-mgr-btn');
+    if (emailBtn) {
+        emailBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openEmailPreview(borrower.email_to_manager_preview);
+        });
+    }
+
+    // Manual Process Listener
+    const manualBtn = wrapper.querySelector('.manual-btn');
+    if (manualBtn) {
+        manualBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showNotification(`Manual process initiated for ${borrower.BORROWER}`, 'success');
+        });
+    }
+
     return wrapper;
 }
+
+// Function to open email preview modal
+function openEmailPreview(emailData) {
+    if (!emailData) return;
+
+    const modal = document.getElementById('emailPreviewModal');
+    const toEl = document.getElementById('emailTo');
+    const subjectEl = document.getElementById('emailSubject');
+    const bodyEl = document.getElementById('emailBody');
+
+    if (toEl) toEl.textContent = emailData.to || 'Area Manager';
+    if (subjectEl) subjectEl.textContent = emailData.subject || 'Follow-up Required';
+    if (bodyEl) bodyEl.textContent = emailData.body || '';
+
+    if (modal) modal.classList.add('active');
+}
+
+// Close listeners for email modal
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('emailPreviewModal');
+    const closeBtns = document.querySelectorAll('.close-email-btn, #closeEmailBtn');
+
+    closeBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (modal) modal.classList.remove('active');
+        });
+    });
+
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+            }
+        });
+    }
+});
 
 // Render transcript bubbles
 function renderTranscript(transcript) {
@@ -791,13 +848,25 @@ async function handleBulkCall() {
         }
     });
 
+    const selectedIntent = document.getElementById('testIntentSelector')?.value || 'normal';
+    console.log(`Starting bulk call with intent mode: ${selectedIntent}`);
+
     try {
         const payload = {
-            borrowers: borrowers.map(b => ({
-                NO: String(b.NO || ''),
-                cell1: String(b.cell1 || ''),
-                preferred_language: String(b.preferred_language || 'en-IN')
-            })),
+            borrowers: borrowers.map(b => {
+                let intent = selectedIntent;
+                if (selectedIntent === 'random') {
+                    const intents = ['normal', 'paid', 'needs_extension', 'dispute', 'abusive', 'threatening', 'stop_calling', 'no_response', 'mid_call', 'failed_pickup'];
+                    intent = intents[Math.floor(Math.random() * intents.length)];
+                }
+
+                return {
+                    NO: String(b.NO || ''),
+                    cell1: String(b.cell1 || ''),
+                    preferred_language: String(b.preferred_language || 'en-IN'),
+                    intent_for_testing: intent
+                };
+            }),
             use_dummy_data: true
         };
 
@@ -825,8 +894,13 @@ async function handleBulkCall() {
                 console.log(`Updating UI for borrower ${res.borrower_id}`);
                 borrower.call_in_progress = false;
                 borrower.call_completed = res.success;
-                borrower.ai_summary = res.ai_analysis ? res.ai_analysis.summary : (res.success ? 'Call completed.' : 'Call failed: ' + res.error);
+                borrower.ai_summary = res.next_step_summary || (res.ai_analysis ? res.ai_analysis.summary : (res.success ? 'Call completed.' : 'Call failed: ' + res.error));
                 borrower.transcript = res.conversation || [];
+                borrower.payment_confirmation = res.payment_confirmation || borrower.payment_confirmation;
+                borrower.follow_up_date = res.follow_up_date || borrower.follow_up_date;
+                borrower.call_frequency = res.call_frequency || borrower.call_frequency;
+                borrower.email_to_manager_preview = res.email_to_manager_preview;
+                borrower.require_manual_process = res.require_manual_process;
 
                 // Update Row UI
                 const row = document.getElementById(`row-${borrower.NO}`);
@@ -853,6 +927,34 @@ async function handleBulkCall() {
                     const summaryEl = document.getElementById(`summary-text-${borrower.NO}`);
                     if (summaryEl) {
                         summaryEl.textContent = borrower.ai_summary;
+                    }
+
+                    // Update actions visibility
+                    const summaryCard = document.getElementById(`summary-card-${borrower.NO}`);
+                    if (summaryCard) {
+                        const manualBtn = summaryCard.querySelector('.manual-btn');
+                        if (manualBtn) manualBtn.style.display = res.require_manual_process ? 'block' : 'none';
+
+                        // Re-render summary actions: add if exists, remove if not
+                        const actionsDiv = summaryCard.querySelector('.summary-actions');
+                        if (actionsDiv) {
+                            const existingEmailBtn = actionsDiv.querySelector('.email-mgr-btn');
+                            const hasEmailDraft = res.email_to_manager_preview && Object.keys(res.email_to_manager_preview).length > 0;
+                            if (hasEmailDraft) {
+                                if (!existingEmailBtn) {
+                                    const emailBtn = document.createElement('button');
+                                    emailBtn.className = 'email-mgr-btn';
+                                    emailBtn.textContent = 'Email to Area Manager';
+                                    emailBtn.addEventListener('click', (e) => {
+                                        e.stopPropagation();
+                                        openEmailPreview(res.email_to_manager_preview);
+                                    });
+                                    actionsDiv.appendChild(emailBtn);
+                                }
+                            } else if (existingEmailBtn) {
+                                existingEmailBtn.remove();
+                            }
+                        }
                     }
                 }
             } else {
@@ -1004,52 +1106,46 @@ function populateReportsTable() {
         row.onmouseleave = () => row.style.background = 'transparent';
 
         const paymentConf = borrower.payment_confirmation || '-';
-        const followUpDate = borrower.follow_up_date || '-';
-        const lastDate = borrower['LAST DUE REVD DATE'] || borrower['LAST DUE/REVD DATE'] || borrower.LAST_PAID_DATE || borrower.DUE_DATE || '-';
+        const followUpDate = (borrower.follow_up_date || '-').replace(/, /g, ',<br>'); // Format for Multi-line if needed
+        const callFreq = borrower.call_frequency || '-';
         const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
         const emi = (borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
         // Style payment confirmation based on intent
-        let paymentConfStyle = 'padding: 4px 12px; border-radius: 12px; font-weight: 600; font-size: 12px; white-space: nowrap;';
+        let paymentConfStyle = 'padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 13px; white-space: nowrap; display: inline-block;';
 
         switch (paymentConf) {
             case 'Paid':
-                // Dark green - payment completed
                 paymentConfStyle += 'background: #d1fae5; color: #065f46;';
                 break;
             case 'Will Pay':
-                // Light green - positive commitment
                 paymentConfStyle += 'background: #dcfce7; color: #166534;';
                 break;
             case 'Needs Extension':
-                // Orange - needs attention
-                paymentConfStyle += 'background: #fed7aa; color: #9a3412;';
+                paymentConfStyle += 'background: #ffedd5; color: #9a3412;';
                 break;
             case 'Dispute':
-                // Red - requires immediate action
                 paymentConfStyle += 'background: #fee2e2; color: #991b1b;';
                 break;
             case 'No Response':
-                // Gray - no engagement
-                paymentConfStyle += 'background: #e5e7eb; color: #6b7280;';
+                paymentConfStyle += 'background: #f3f4f6; color: #6b7280;';
                 break;
             default:
-                // Default gray for pending/unknown
-                paymentConfStyle += 'background: #f3f4f6; color: #9ca3af;';
+                paymentConfStyle += 'background: #f9fafb; color: #9ca3af; border: 1px solid #e5e7eb;';
         }
 
         row.innerHTML = `
             <td style="padding: 16px; font-weight: 500;">${borrower.NO || '-'}</td>
-            <td style="padding: 16px; font-weight: 600; color: #1f2937;">${borrower.BORROWER || '-'}</td>
-            <td style="padding: 16px; color: #059669; font-weight: 600;">₹${amount}</td>
-            <td style="padding: 16px;">${borrower.cell1 || borrower.MOBILE || '-'}</td>
-            <td style="padding: 16px;">₹${emi}</td>
-            <td style="padding: 16px; text-transform: capitalize;">${borrower.preferred_language || borrower.LANGUAGE || 'English'}</td>
-            <td style="padding: 16px;">
+            <td style="padding: 16px; font-weight: 700; color: #1f2937; letter-spacing: 0.5px;">${borrower.BORROWER || '-'}</td>
+            <td style="padding: 16px; color: #059669; font-weight: 700;">₹${amount}</td>
+            <td style="padding: 16px; color: #4b5563;">${borrower.cell1 || borrower.MOBILE || '-'}</td>
+            <td style="padding: 16px; color: #374151; font-weight: 500;">₹${emi}</td>
+            <td style="padding: 16px; text-transform: capitalize; color: #4b5563;">${borrower.preferred_language || borrower.LANGUAGE || 'English'}</td>
+            <td style="padding: 16px; text-align: center;">
                 <span style="${paymentConfStyle}">${paymentConf}</span>
             </td>
-            <td style="padding: 16px; font-weight: 500; color: #4b5563;">${followUpDate}</td>
-            <td style="padding: 16px; color: #6b7280;">${lastDate}</td>
+            <td style="padding: 16px; font-weight: 600; color: #4b5563; line-height: 1.4; font-size: 13px;">${followUpDate}</td>
+            <td style="padding: 16px; font-weight: 500; color: #4b5563; font-size: 13px;">${callFreq}</td>
         `;
 
         tableBody.appendChild(row);
@@ -1112,3 +1208,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// Helper functions for intent styling
+function getIntentBg(intent) {
+    switch (intent) {
+        case 'Paid': return '#d1fae5';
+        case 'Will Pay': return '#dcfce7';
+        case 'Needs Extension': return '#fed7aa';
+        case 'Dispute': return '#fee2e2';
+        case 'No Response': return '#e5e7eb';
+        case 'Abusive Language': return '#fef2f2';
+        case 'Threatening Language': return '#7f1d1d';
+        case 'Stop Calling': return '#4b5563';
+        default: return '#f3f4f6';
+    }
+}
+
+function getIntentColor(intent) {
+    switch (intent) {
+        case 'Paid': return '#065f46';
+        case 'Will Pay': return '#166534';
+        case 'Needs Extension': return '#9a3412';
+        case 'Dispute': return '#991b1b';
+        case 'No Response': return '#6b7280';
+        case 'Abusive Language': return '#991b1b';
+        case 'Threatening Language': return '#ffffff';
+        case 'Stop Calling': return '#ffffff';
+        default: return '#9ca3af';
+    }
+}

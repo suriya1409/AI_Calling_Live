@@ -255,12 +255,63 @@
                 </div>
             </div>
 
-            <!-- Reports View (Placeholder) -->
+            <!-- Reports View -->
             <div id="reports-view" class="view-section">
-                <div class="glass-panel" style="padding: 40px; text-align: center; border-radius: 20px;">
-                    <div style="font-size: 64px; margin-bottom: 20px;">📊</div>
-                    <h2>Reports Dashboard</h2>
-                    <p style="color: #6b7280; margin-top: 10px;">Detailed reports and analytics will appear here.</p>
+                <div class="reports-header"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+                    <div>
+                        <h2 style="margin: 0; font-size: 28px; font-weight: 700;">Detailed Reports</h2>
+                        <p style="color: #6b7280; margin-top: 8px;">Complete borrower data with call status and payment
+                            information</p>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button id="refreshDataBtn" class="filter-btn" style="background: #e0f2fe; color: #0369a1;">
+                            <span class="icon">🔄</span> Refresh Data
+                        </button>
+                        <button id="exportCsvBtn" class="make-call-btn">
+                            <span class="icon">📥</span> Export CSV
+                        </button>
+                    </div>
+                </div>
+
+                <div class="glass-panel" style="padding: 0; border-radius: 20px; overflow: hidden;">
+                    <div class="table-container" style="overflow-x: auto;">
+                        <table id="reportsTable" style="width: 100%; border-collapse: collapse;">
+                            <thead style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                <tr>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        NO</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        BORROWER</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        AMOUNT</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        PHONE</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        EMI</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        LANGUAGE</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        PAYMENT STATUS</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        FOLLOW UP</th>
+                                    <th style="padding: 16px; text-align: left; font-weight: 600; white-space: nowrap;">
+                                        ACTION/FREQ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reportsTableBody">
+                                <tr>
+                                    <td colspan="10" style="padding: 60px; text-align: center; color: #9ca3af;">
+                                        <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
+                                        <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No data
+                                            available</div>
+                                        <div style="font-size: 14px;">Upload a file or refresh to load borrower data
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -277,6 +328,20 @@
                         <button class="filter-btn" id="resetAllCallsBtn" style="background: #fee2e2; color: #b91c1c;">
                             <span class="icon">🔄</span> Reset All
                         </button>
+                        <select id="testIntentSelector" class="filter-btn"
+                            style="background: white; border: 1px solid #e5e7eb; font-size: 13px; font-weight: 600; cursor: pointer;">
+                            <option value="normal">Normal Intent</option>
+                            <option value="paid">Paid Intent</option>
+                            <option value="needs_extension">Extension Intent</option>
+                            <option value="dispute">Dispute Intent</option>
+                            <option value="abusive">Abusive Intent</option>
+                            <option value="threatening">Threatening Intent</option>
+                            <option value="stop_calling">Stop Calling</option>
+                            <option value="no_response">No Response</option>
+                            <option value="mid_call">Mid-Call Drop</option>
+                            <option value="failed_pickup">Failed Pickup (Test)</option>
+                            <option value="random">All Intents (Mix)</option>
+                        </select>
                         <button class="make-call-btn" id="makeBulkCallBtn">
                             <span class="icon">📞</span> Make call
                         </button>
@@ -335,15 +400,50 @@
                                 <th>No.</th>
                                 <th>Borrower</th>
                                 <th>Amount</th>
-                                <th>EMI</th>
                                 <th>Phone</th>
                                 <th>Status</th>
+                                <th>Intent</th>
                             </tr>
                         </thead>
                         <tbody id="borrowersTableBody">
                             <!-- Data will be inserted here -->
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <!-- Email Preview Modal -->
+    <div id="emailPreviewModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>Email to Area Manager</h2>
+                <span class="close-email-btn" style="font-size: 28px; color: #9ca3af; cursor: pointer;">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="email-preview-container"
+                    style="background: white; border-radius: 12px; border: 1px solid #e5e7eb; overflow: hidden;">
+                    <div style="padding: 16px; border-bottom: 1px solid #f3f4f6; background: #f9fafb;">
+                        <div style="margin-bottom: 8px;"><span
+                                style="font-weight: 600; color: #6b7280; width: 60px; display: inline-block;">To:</span>
+                            <span id="emailTo">Area Manager</span>
+                        </div>
+                        <div><span
+                                style="font-weight: 600; color: #6b7280; width: 60px; display: inline-block;">Subject:</span>
+                            <span id="emailSubject" style="font-weight: 500;">Payment Verification: Borrower Name</span>
+                        </div>
+                    </div>
+                    <div id="emailBody"
+                        style="padding: 24px; min-height: 200px; white-space: pre-line; line-height: 1.6; color: #374151;">
+                        Loading email content...
+                    </div>
+                </div>
+                <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px;">
+                    <button class="filter-btn" id="closeEmailBtn">Close</button>
+                    <button class="make-call-btn" id="sendEmailBtn" disabled>Send Email (MVP: Disabled)</button>
                 </div>
             </div>
         </div>
