@@ -66,6 +66,11 @@ def normalize_language(language: str) -> str:
     if language_upper in language_map:
         return language_map[language_upper]
     
+    # Check if the input starts with any of the primary names in case of variations like "English (UK)"
+    if "ENGLISH" in language_upper: return "en-IN"
+    if "HINDI" in language_upper: return "hi-IN"
+    if "TAMIL" in language_upper: return "ta-IN"
+    
     for config_key in settings.LANGUAGE_CONFIG.keys():
         if config_key.upper() == language_upper:
             return config_key
@@ -130,25 +135,31 @@ class BulkCallResponse(BaseModel):
 DUMMY_CONVERSATIONS = {
     "normal": {
         "en-IN": [
-            {"speaker": "AI", "text": "Hello, I am calling from the finance agency regarding your loan payment. May I know your current payment status?"},
-            {"speaker": "User", "text": "I will pay day after tomorrow, is it fine?"},
-            {"speaker": "AI", "text": "Thank you. Could you confirm the specific date?"},
-            {"speaker": "User", "text": "I will be paying it on 18th February 2026."},
-            {"speaker": "AI", "text": "Thank you, we will look forward to it. Good bye."}
+            {"speaker": "AI", "text": "Hi Mr Rajesh, hope you are doing well today. We are calling from the Loan sector, this is a general check-up call regarding the Loan amount that you have borrowed. Your due date is coming up soon on March 5th 2026. Can you please let us know if you will be paying the balance amount before the due date?"},
+            {"speaker": "User", "text": "Hi, yes I will be paying the amount before the due date."},
+            {"speaker": "AI", "text": "Good to know sir, we will update our records accordingly. Do you have any questions for us?"},
+            {"speaker": "User", "text": "Yes could you please let me know what my current loan due amount is and after the payment for this month how much it would be totally?"},
+            {"speaker": "AI", "text": "Sure sir, your current outstanding loan amount is ₹50,000 and after payment of the due this month your loan amount would be ₹45,000."},
+            {"speaker": "User", "text": "Thank you for the information."},
+            {"speaker": "AI", "text": "Thank you sir, have a good day!"}
         ],
         "hi-IN": [
-            {"speaker": "AI", "text": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रहा हूं। कृपया अपनी वर्तमान भुगतान स्थिति बताएं?"},
-            {"speaker": "User", "text": "मैं परसों पेमेंट कर दूंगा, ठीक है?"},
-            {"speaker": "AI", "text": "धन्यवाद। क्या आप कृपया विशिष्ट तारीख बता सकते हैं?"},
-            {"speaker": "User", "text": "मैं 18 फरवरी को भुगतान कर दूंगा।"},
-            {"speaker": "AI", "text": "धन्यवाद। हम आपके भुगतान का इंतजार करेंगे।"}
+            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, आशा है आप अच्छे हैं। हम लोन सेक्टर से कॉल कर रहे हैं, यह आपके उधार लिए गए लोन के बारे में एक सामान्य फॉलो-अप कॉल है। आपकी ड्यू डेट जल्द आ रही है 5 मार्च 2026। क्या आप ड्यू डेट से पहले बकाया राशि का भुगतान कर देंगे?"},
+            {"speaker": "User", "text": "हां, मैं ड्यू डेट से पहले भुगतान कर दूंगा।"},
+            {"speaker": "AI", "text": "यह सुनकर अच्छा लगा श्रीमान, हम अपने रिकॉर्ड अपडेट कर देंगे। क्या आपका कोई सवाल है?"},
+            {"speaker": "User", "text": "हां, कृपया बताइए कि मेरी वर्तमान लोन बकाया राशि कितनी है और इस महीने के भुगतान के बाद कुल कितनी रहेगी?"},
+            {"speaker": "AI", "text": "जी श्रीमान, आपकी वर्तमान कुल बकाया लोन राशि ₹50,000 है और इस महीने के भुगतान के बाद आपकी बकाया राशि ₹45,000 होगी।"},
+            {"speaker": "User", "text": "जानकारी के लिए धन्यवाद।"},
+            {"speaker": "AI", "text": "धन्यवाद श्रीमान, आपका दिन शुभ हो!"}
         ],
         "ta-IN": [
-            {"speaker": "AI", "text": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன். உங்கள் தற்போதைய கட்டண நிலையை தயவுசெய்து கூறுங்கள்?"},
-            {"speaker": "User", "text": "நான் நாளை மறுநாள் செலுத்துகிறேன், சரியா?"},
-            {"speaker": "AI", "text": "நன்றி. குறிப்பிட்ட தேதியை கூற முடியுமா?"},
-            {"speaker": "User", "text": "நான் பிப்ரவரி 18 அன்று செலுத்துவேன்."},
-            {"speaker": "AI", "text": "நன்றி. உங்கள் கட்டணத்திற்காக காத்திருக்கிறோம்."}
+            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடன் பிரிவிலிருந்து அழைக்கிறோம், நீங்கள் பெற்ற கடன் தொகை குறித்த வழக்கமான பின்தொடர் அழைப்பு. உங்கள் செலுத்த வேண்டிய தேதி விரைவில் வரவிருக்கிறது மார்ச் 5, 2026. நிலுவைத் தொகையை ட்யூ டேட்-க்கு முன் செலுத்துவீர்களா?"},
+            {"speaker": "User", "text": "ஆமாம், நான் ட்யூ டேட்-க்கு முன் தொகையை செலுத்துவேன்."},
+            {"speaker": "AI", "text": "நல்லது ஐயா, நாங்கள் எங்கள் பதிவுகளை அதற்கேற்ப புதுப்பிப்போம். உங்களுக்கு ஏதாவது கேள்விகள் உள்ளதா?"},
+            {"speaker": "User", "text": "ஆமாம், என் தற்போதைய கடன் நிலுவை தொகை என்ன மற்றும் இந்த மாத கட்டணத்திற்குப் பிறகு மொத்தமாக எவ்வளவு இருக்கும் என்று கூற முடியுமா?"},
+            {"speaker": "AI", "text": "நிச்சயமாக ஐயா, உங்கள் தற்போதைய கடன் நிலுவை ₹50,000 மற்றும் இந்த மாத கட்டணத்திற்குப் பிறகு உங்கள் கடன் நிலுவை ₹45,000 ஆகும்."},
+            {"speaker": "User", "text": "தகவலுக்கு நன்றி."},
+            {"speaker": "AI", "text": "நன்றி ஐயா, நல்ல நாள் வாழ்த்துகள்!"}
         ]
     },
     "abusive": {
@@ -471,7 +482,7 @@ async def process_single_call(user_id: str, borrower: BorrowerInfo, use_dummy_da
         if use_dummy_data:
             res = await create_dummy_call(user_id, borrower.cell1, normalized_language, borrower.NO, borrower.intent_for_testing)
         else:
-            res = make_outbound_call(borrower.cell1, normalized_language, borrower.NO)
+            res = make_outbound_call(user_id, borrower.cell1, normalized_language, borrower.NO)
         
         last_res = res
         
@@ -586,7 +597,7 @@ async def make_single_call(request: SingleCallRequest, current_user: dict = Depe
     if request.use_dummy_data:
         res = await create_dummy_call(user_id, request.to_number, lang, request.borrower_id, request.intent_for_testing)
     else:
-        res = make_outbound_call(request.to_number, lang, request.borrower_id)
+        res = make_outbound_call(user_id, request.to_number, lang, request.borrower_id)
         
     if res.get("success"):
         return CallResponse(

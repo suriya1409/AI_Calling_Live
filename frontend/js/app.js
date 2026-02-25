@@ -656,6 +656,22 @@ function showSummaryDetailsListView(periodKey) {
     const container = document.getElementById('callRowsContainer');
     container.innerHTML = '';
 
+    const selectAllCheckbox = document.getElementById('selectAllBorrowers');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+        // Remove existing listeners if any
+        const newSelectAll = selectAllCheckbox.cloneNode(true);
+        selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
+
+        newSelectAll.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            const rowCheckboxes = container.querySelectorAll('.row-checkbox');
+            rowCheckboxes.forEach(cb => {
+                cb.checked = isChecked;
+            });
+        });
+    }
+
     if (borrowers.length === 0) {
         container.innerHTML = '<div style="text-align: center; padding: 40px; color: #6b7280;">No borrowers found in this section.</div>';
         return;
@@ -664,6 +680,20 @@ function showSummaryDetailsListView(periodKey) {
     borrowers.forEach(borrower => {
         const rowWrapper = createCallDataRow(borrower);
         container.appendChild(rowWrapper);
+
+        // Add listener to the new checkbox
+        const checkbox = rowWrapper.querySelector('.row-checkbox');
+        if (checkbox) {
+            checkbox.addEventListener('change', () => {
+                const total = container.querySelectorAll('.row-checkbox').length;
+                const checked = container.querySelectorAll('.row-checkbox:checked').length;
+                const selectAll = document.getElementById('selectAllBorrowers');
+                if (selectAll) {
+                    selectAll.checked = total === checked;
+                    selectAll.indeterminate = checked > 0 && checked < total;
+                }
+            });
+        }
     });
 
     window.scrollTo(0, 0);
@@ -696,6 +726,9 @@ function createCallDataRow(borrower) {
 
     wrapper.innerHTML = `
         <div class="call-row">
+            <div class="col-check">
+                <input type="checkbox" class="row-checkbox" data-id="${borrower.NO}">
+            </div>
             <div class="borrower-cell">
                 <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(borrower.BORROWER)}&background=random" class="borrower-avatar" alt="${borrower.BORROWER}">
                 <div class="borrower-meta">
@@ -741,6 +774,11 @@ function createCallDataRow(borrower) {
     // Toggle expansion
     wrapper.querySelector('.call-row').addEventListener('click', () => {
         wrapper.classList.toggle('expanded');
+    });
+
+    // Prevent expansion when clicking checkbox
+    wrapper.querySelector('.row-checkbox').addEventListener('click', (e) => {
+        e.stopPropagation();
     });
 
     // Email Button Listener
@@ -818,13 +856,18 @@ async function handleBulkCall() {
     const periodKey = sessionStorage.getItem('current_period_key');
     if (!periodKey || !currentKpiData) return;
 
-    const borrowers = currentKpiData.detailed_breakdown.by_due_date_category[periodKey] || [];
+    const borrowersList = currentKpiData.detailed_breakdown.by_due_date_category[periodKey] || [];
+
+    // Filter selected borrowers
+    const selectedIds = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.dataset.id);
+    const borrowers = borrowersList.filter(b => selectedIds.includes(String(b.NO)));
+
     if (borrowers.length === 0) {
-        showNotification('No borrowers to call.', 'warning');
+        showNotification('Please select at least one borrower to make a call.', 'warning');
         return;
     }
 
-    showNotification(`Triggering parallel calls for ${borrowers.length} borrowers...`, 'info');
+    showNotification(`Triggering parallel calls for ${borrowers.length} selected borrowers...`, 'info');
 
     const makeBulkCallBtn = document.getElementById('makeBulkCallBtn');
     if (makeBulkCallBtn) makeBulkCallBtn.disabled = true;

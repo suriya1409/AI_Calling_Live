@@ -4,6 +4,7 @@ AIaaS Finance Platform - Main Application
 Entry point for the FastAPI application
 Runs both FastAPI (port 8000) and Flask WebSocket server (port 5000)
 """
+import asyncio
 
 import threading
 import time
@@ -54,6 +55,13 @@ async def root():
             "flask": "http://127.0.0.1:5000 (Webhooks & WebSocket)"
         }
     }
+
+
+@app.on_event("startup")
+async def on_startup():
+    """Store the main event loop so Flask can schedule async DB operations on it"""
+    import flask_server
+    flask_server.set_main_loop(asyncio.get_running_loop())
 
 
 @app.get("/health", tags=["Health"])

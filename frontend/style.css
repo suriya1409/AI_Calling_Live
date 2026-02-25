@@ -929,7 +929,7 @@ td {
 
 .call-table-header {
     display: grid;
-    grid-template-columns: 2fr 1.5fr 1.5fr 1fr 1.2fr;
+    grid-template-columns: 50px 2fr 1.5fr 1.5fr 1fr 1.2fr;
     padding: 0 24px 16px 24px;
     color: #4f46e5;
     font-weight: 700;
@@ -952,17 +952,30 @@ td {
 
 .call-row {
     display: grid;
-    grid-template-columns: 2fr 1.5fr 1.5fr 1fr 1.2fr;
-    padding: 16px 0;
+    grid-template-columns: 50px 2fr 1.5fr 1.5fr 1fr 1.2fr;
+    padding: 16px 24px;
     align-items: center;
     cursor: pointer;
+}
+
+.col-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.col-check input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #4f46e5;
 }
 
 .borrower-cell {
     display: flex;
     align-items: center;
     gap: 16px;
-    padding-left: 24px;
+    padding-left: 0;
 }
 
 .borrower-avatar {
@@ -1014,7 +1027,7 @@ td {
 .action-cell {
     display: flex;
     justify-content: flex-end;
-    padding-right: 24px;
+    padding-right: 0;
 }
 
 .status-btn {

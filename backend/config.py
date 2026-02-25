@@ -50,19 +50,19 @@ class Settings:
             "name": "English",
             "speaker": "vidya",
             "enable_preprocessing": False,
-            "greeting": "Hello, I am calling from the finance agency regarding your loan payment. May I know your current payment status?"
+            "greeting": "Hello, hope you are doing well today. We are calling from the Loan sector, this is a general check-up call regarding the Loan amount that you have borrowed. Your due date is coming up soon. Can you please let us know if you will be paying the balance amount before the due date?"
         },
         "hi-IN": {
             "name": "Hindi",
             "speaker": "vidya",
             "enable_preprocessing": True,
-            "greeting": "नमस्ते, मैं वित्त एजेंसी से आपके लोन भुगतान के बारे में कॉल कर रही हूं। कृपया अपनी वर्तमान भुगतान स्थिति बताएं?"
+            "greeting": "नमस्ते, आशा है आप अच्छे हैं। हम लोन सेक्टर से कॉल कर रहे हैं, यह आपके उधार लिए गए लोन के बारे में एक सामान्य फॉलो-अप कॉल है। आपकी ड्यू डेट जल्द आ रही है। क्या आप ड्यू डेट से पहले बकाया राशि का भुगतान कर देंगे?"
         },
         "ta-IN": {
             "name": "Tamil",
             "speaker": "manisha",
             "enable_preprocessing": True,
-            "greeting": "வணக்கம், நான் நிதி நிறுவனத்திலிருந்து உங்கள் கடன் செலுத்துதல் பற்றி அழைக்கிறேன். உங்கள் தற்போதைய கட்டண நிலையை தயவுசெய்து கூறுங்கள்?"
+            "greeting": "வணக்கம், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடன் பிரிவிலிருந்து அழைக்கிறோம், நீங்கள் பெற்ற கடன் தொகை குறித்த வழக்கமான பின்தொடர் அழைப்பு. உங்கள் செலுத்த வேண்டிய தேதி விரைவில் வரவிருக்கிறது. நிலுவைத் தொகையை ட்யூ டேட்-க்கு முன் செலுத்துவீர்களா?"
         }
     }
     

@@ -100,10 +100,56 @@ else:
         print("[GROQ] ⚠️  GROQ_API_KEY not found in settings.")
     print("[GROQ] ⚠️  Groq not configured - fallback analysis will be disabled")
 
+# Initialize SYNC Groq client (for real-time responses in Flask sync context)
+sync_groq_client = None
+if GROQ_AVAILABLE and settings.GROQ_API_KEY and "your_groq_api_key_here" not in settings.GROQ_API_KEY:
+    try:
+        sync_groq_client = Groq(api_key=settings.GROQ_API_KEY)
+        print("[GROQ] ✅ Sync Groq client initialized for real-time call responses")
+    except Exception as e:
+        print(f"[GROQ] ⚠️  Failed to initialize sync client: {e}")
+        sync_groq_client = None
+
 
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
+
+# Common Indian female first names for gender detection
+_FEMALE_NAMES = {
+    "shalini", "priya", "lakshmi", "deepa", "anita", "sunita", "kavita", "meena",
+    "rekha", "neha", "pooja", "swati", "anjali", "divya", "sneha", "ritu",
+    "nisha", "rani", "geeta", "seema", "mamta", "sapna", "jyoti", "suman",
+    "padma", "vidya", "radha", "uma", "sarita", "asha", "usha", "kalpana",
+    "shobha", "lata", "chitra", "kamala", "pushpa", "savita", "sudha", "mala",
+    "aruna", "saroj", "indira", "parvati", "malini", "revathi", "bhavani",
+    "devi", "gowri", "janaki", "kalyani", "meenakshi", "nirmala", "sarala",
+    "vasanthi", "vijaya", "yamuna", "sumathi", "jayanthi", "lalitha", "rohini",
+    "preeti", "shweta", "ankita", "pallavi", "shruti", "aishwarya", "bhavna",
+    "manisha", "rashmi", "varsha", "alka", "komal", "tanvi", "ritika", "sakshi",
+    "aarthi", "karthika", "nandhini", "vaishnavi", "harini", "sangeetha",
+    "mythili", "bhuvana", "abinaya", "dhivya", "gayathri", "keerthana",
+    "mathangi", "oviya", "priyanka", "ramya", "swetha", "thenmozhi", "vani",
+    "amita", "garima", "heena", "ila", "juhi", "kiran", "laxmi", "madhu",
+    "namita", "omana", "payal", "rachana", "sonal", "tara", "urmila", "vinita"
+}
+
+def detect_gender_from_name(name: str) -> str:
+    """Detect gender from borrower name using common Indian name patterns.
+    Returns 'female' or 'male' (defaults to male if uncertain)."""
+    if not name:
+        return "male"
+    
+    # Extract first name
+    first_name = name.strip().split()[0].lower()
+    
+    # Check against known female names
+    if first_name in _FEMALE_NAMES:
+        return "female"
+    
+    # Heuristic: many Indian female names end in 'a', 'i', or 'i'
+    # But this is unreliable, so we default to male for safety
+    return "male"
 
 def calculate_follow_up_schedule(category):
     """
@@ -541,13 +587,13 @@ def detect_language(text):
 class AudioBuffer:
     """Buffer audio chunks and detect silence"""
     
-    def __init__(self, silence_threshold=300, silence_duration=1.2):
+    def __init__(self, silence_threshold=500, silence_duration=1.8):
         self.buffer = BytesIO()
         self.silence_threshold = silence_threshold
         self.silence_duration = silence_duration
         self.silence_start = None
         self.speech_detected = False
-        self.min_speech_duration = 0.6
+        self.min_speech_duration = 1.0
         
     def add_chunk(self, audio_chunk):
         """Add audio chunk and detect if ready to process"""
@@ -588,57 +634,201 @@ class AudioBuffer:
 # AI RESPONSE GENERATION
 # ============================================================
 
-def generate_ai_response(user_text, language="en-IN", context=None):
-    """Generate AI response using Gemini with User context"""
-    FALLBACKS = {
-        "en-IN": "I'm sorry, I'm having a bit of trouble hearing you. Could you repeat that?",
-        "hi-IN": "क्षमा करें, मुझे आपकी बात सुनने में कठिनाई हो रही है। क्या आप दोहरा सकते हैं?",
-        "ta-IN": "மன்னிக்கவும், உங்கள் பேச்சைக் கேட்பதில் சிரமம் உள்ளது. மீண்டும் கூற முடியுமா?"
-    }
+def is_farewell_response(text, language="en-IN"):
+    """Detect if the AI response is a FINAL farewell/closing statement.
     
-    if not gemini_client:
-        return FALLBACKS.get(language, FALLBACKS["en-IN"])
+    IMPORTANT: This must be VERY strict to avoid cutting calls mid-conversation.
+    Only match when the response is clearly a goodbye (end of conversation),
+    NOT when it merely contains words like 'thank you' or 'update records' 
+    as part of an ongoing exchange.
+    
+    Strategy: Check that farewell phrases appear at the END of the text (last part),
+    and that the text does NOT contain follow-up questions (like 'Do you have any questions?').
+    """
+    text_lower = text.lower().strip()
+    
+    # If the response contains a question, it's NOT a farewell — the AI is still engaging
+    question_indicators = ["?", "any questions", "anything else", "कोई सवाल", "कुछ और", "கேள்வி", "வேறு ஏதாவது"]
+    if any(q in text_lower for q in question_indicators):
+        return False
+    
+    # Only check the TAIL of the response for farewell patterns
+    # This avoids matching "thank you for telling us" at the start of a longer response
+    tail = text_lower[-80:] if len(text_lower) > 80 else text_lower
+    
+    # ── ENGLISH ──
+    farewell_patterns_en = [
+        "have a good day",
+        "have a nice day", 
+        "goodbye",
+        "good bye",
+        "take care",
+    ]
+    
+    # ── HINDI ──
+    # "दिन शुभ हो" = have a good day (very specific)
+    # "अलविदा" = goodbye  
+    # "ख्याल रखिए" = take care
+    farewell_patterns_hi = [
+        "दिन शुभ हो",
+        "शुभ दिन",
+        "अलविदा",
+        "ख्याल रखिए",
+        "ख्याल रखें",
+    ]
+    
+    # ── TAMIL ──
+    # "நல்ல நாள் வாழ்த்துகள்" = good day wishes (very specific)
+    # "போய் வருகிறேன்" = goodbye (I'll go and come)
+    # "நலமாக இருங்கள்" = be well / take care
+    farewell_patterns_ta = [
+        "நல்ல நாள் வாழ்த்துகள்",
+        "நல்ல நாள்",
+        "போய் வருகிறேன்",
+        "நலமாக இருங்கள்",
+    ]
+    
+    if language == "hi-IN":
+        return any(p in tail for p in farewell_patterns_hi)
+    elif language == "ta-IN":
+        return any(p in tail for p in farewell_patterns_ta)
+    else:
+        return any(p in tail for p in farewell_patterns_en)
+
+
+def generate_ai_response(user_text, language="en-IN", context=None):
+    """Generate AI response for real-time calls. Uses sync Groq (primary) or Gemini (fallback).
+    Follows a structured conversation flow with gender-aware greetings.
+    Responses are kept SHORT (1-2 sentences max) for natural phone conversation flow."""
+    FALLBACKS = {
+        "en-IN": "I understand. Could you tell me more about your payment status?",
+        "hi-IN": "मैं समझ रही हूं। कृपया अपने भुगतान की स्थिति बताएं?",
+        "ta-IN": "புரிகிறது. உங்கள் கட்டண நிலை பற்றி கூறுங்கள்?"
+    }
     
     conv_history = ""
     if context and "conversation" in context:
-        conv_history = "\n".join([f"{e['speaker']}: {e['text']}" for e in context["conversation"][-5:]])
+        conv_history = "\n".join([f"{e['speaker']}: {e['text']}" for e in context["conversation"][-6:]])
     
+    # ── BUILD BORROWER CONTEXT STRING ──
+    borrower_info_str = ""
+    gender = "male"
+    honorific_en = "sir"
+    honorific_hi = "श्रीमान"
+    honorific_ta = "ஐயா"
+    
+    if context and "borrower_info" in context:
+        bi = context["borrower_info"]
+        b_name = bi.get('name', 'Unknown')
+        gender = detect_gender_from_name(b_name)
+        
+        if gender == "female":
+            honorific_en = "ma'am"
+            honorific_hi = "मैडम"
+            honorific_ta = "மேடம்"
+        
+        outstanding = bi.get('amount', 0)
+        emi = bi.get('emi', 0)
+        remaining_after_emi = outstanding - emi if outstanding and emi else 0
+        
+        gender_label = "sir" if gender == "male" else "ma'am"
+        borrower_info_str = (
+            f"\n\nBORROWER DATA (you already know this - use this naturally, NEVER ask for this info):\n"
+            f"- Name: {b_name}\n"
+            f"- Gender: {gender} (use {gender_label} accordingly)\n"
+            f"- Outstanding Loan Amount: ₹{outstanding:,.2f}\n"
+            f"- Monthly EMI: ₹{emi:,.2f}\n"
+            f"- Remaining After This Month's Payment: ₹{remaining_after_emi:,.2f}\n"
+            f"- Due Date: {bi.get('due_date', 'N/A')}\n"
+            f"- Last Paid: {bi.get('last_paid', 'N/A')}\n"
+            f"- Payment Category: {bi.get('payment_category', 'N/A')}\n"
+            f"- Loan No: {bi.get('loan_no', 'N/A')}\n"
+        )
+    
+    # System prompts with structured conversation flow
     sys_prompts = {
-        "en-IN": "You are a professional collection assistant named Vidya. Respond in English brief (1-2 sentences).",
-        "hi-IN": "आप एक वित्त एजेंसी की वसूली सहायक 'विद्या' हैं। हिंदी में संक्षिप्त जवाब दें।",
-        "ta-IN": "நீங்கள் நிதி நிறுவனத்தின் வசூல் உதவியாளர் 'வித்யா'. தமிழில் சுருக்கமாக பதிலளிக்கவும்."
+        "en-IN": (
+            "You are Vidya, a polite loan collection assistant on a PHONE CALL. "
+            "CRITICAL RULES:\n"
+            "- Respond in English. Keep replies to 1-2 SHORT sentences (max 25 words total).\n"
+            "- Never repeat what you already said. Be empathetic but direct.\n"
+            f"- Address the borrower as '{honorific_en}' (based on their gender).\n"
+            "- NEVER ask for information you already have (amount, name, dates).\n"
+            "\nCONVERSATION FLOW TO FOLLOW:\n"
+            "1. GREETING (already done): 'Hi Mr/Mrs [Name], hope you are doing well today. We are calling from the Loan sector, this is a general check-up call regarding the Loan amount that you have borrowed. Your due date is coming up soon [date]. Can you please let us know if you will be paying the balance amount before due date?'\n"
+            "2. If borrower confirms they WILL PAY: 'Good to know {honorific}, we will update our records accordingly. Do you have any questions for us?'\n"
+            "3. If borrower asks about loan amounts: 'Sure {honorific}, your current outstanding loan amount is [amount] and after payment of the due this month your loan amount would be [remaining].'\n"
+            "4. When borrower says thank you or has no more questions: 'Thank you {honorific}, have a good day!'\n"
+            "5. For any other scenario (dispute, extension, abusive etc.), handle professionally in 1 sentence.\n"
+            + borrower_info_str
+        ),
+        "hi-IN": (
+            "आप विद्या हैं, फोन पर लोन वसूली सहायक। "
+            "महत्वपूर्ण नियम:\n"
+            "- हिंदी में जवाब दें। 1-2 छोटे वाक्यों में (अधिकतम 25 शब्द) जवाब दें।\n"
+            "- जो पहले कह चुकी हैं वो दोबारा न कहें।\n"
+            f"- उधारकर्ता को '{honorific_hi}' कहें (उनके लिंग के आधार पर)।\n"
+            "- जो जानकारी आपके पास पहले से है (राशि, नाम, तारीख) वो कभी न पूछें।\n"
+            "\nबातचीत का क्रम:\n"
+            "1. अभिवादन (पहले ही हो चुका): 'नमस्ते श्री/श्रीमती [नाम] जी, आशा है आप अच्छे हैं। हम लोन सेक्टर से कॉल कर रहे हैं, यह आपके उधार लिए गए लोन के बारे में एक सामान्य फॉलो-अप कॉल है। आपकी due date जल्द आ रही है [तारीख]। क्या आप due date से पहले बकाया राशि का भुगतान कर देंगे?'\n"
+            f"2. अगर उधारकर्ता भुगतान की पुष्टि करे: 'यह सुनकर अच्छा लगा {honorific_hi}, हम अपने रिकॉर्ड अपडेट कर देंगे। क्या आपका कोई सवाल है?'\n"
+            f"3. अगर लोन राशि पूछें: 'जी {honorific_hi}, आपकी वर्तमान कुल बकाया लोन राशि [राशि] है और इस महीने के भुगतान के बाद आपकी बकाया राशि [शेष] होगी।'\n"
+            f"4. जब उधारकर्ता धन्यवाद कहें या कोई सवाल न हो: 'धन्यवाद {honorific_hi}, आपका दिन शुभ हो!'\n"
+            "5. किसी भी अन्य स्थिति (विवाद, एक्सटेंशन, अभद्र) को 1 वाक्य में पेशेवर तरीके से संभालें।\n"
+            + borrower_info_str
+        ),
+        "ta-IN": (
+            "நீங்கள் வித்யா, தொலைபேசியில் கடன் வசூல் உதவியாளர். "
+            "முக்கிய விதிகள்:\n"
+            "- தமிழில் பதிலளிக்கவும். 1-2 குறுகிய வாக்கியங்களில் (அதிகபட்சம் 25 வார்த்தைகள்) பதிலளிக்கவும்.\n"
+            "- ஏற்கனவே கூறியதை மீண்டும் கூறாதீர்கள்.\n"
+            f"- கடன் வாங்கியவரை '{honorific_ta}' என்று அழையுங்கள் (பாலினத்தின் அடிப்படையில்).\n"
+            "- உங்களிடம் ஏற்கனவே உள்ள தகவல்களை (தொகை, பெயர், தேதிகள்) ஒருபோதும் கேட்காதீர்கள்.\n"
+            "\nஉரையாடல் வரிசை:\n"
+            "1. வாழ்த்து (ஏற்கனவே செய்யப்பட்டது): 'வணக்கம் திரு/திருமதி [பெயர்], நலமாக இருப்பீர்கள் என நம்புகிறேன். கடன் பிரிவிலிருந்து அழைக்கிறோம், நீங்கள் பெற்ற கடன் தொகை குறித்த வழக்கமான பின்தொடர் அழைப்பு. உங்கள் செலுத்த வேண்டிய தேதி வரவிருக்கிறது [தேதி]. நிலுவைத் தொகையை due date-க்கு முன் செலுத்துவீர்களா?'\n"
+            f"2. கடன் வாங்கியவர் செலுத்துவதாக உறுதியளித்தால்: 'நல்லது {honorific_ta}, நாங்கள் எங்கள் பதிவுகளை அதற்கேற்ப புதுப்பிப்போம். உங்களுக்கு ஏதாவது கேள்விகள் உள்ளதா?'\n"
+            f"3. கடன் தொகை குறித்து கேட்டால்: 'நிச்சயமாக {honorific_ta}, உங்கள் தற்போதைய கடன் நிலுவை [தொகை] மற்றும் இந்த மாத கட்டணத்திற்குப் பிறகு உங்கள் கடன் நிலுவை [மீதமுள்ள] ஆகும்.'\n"
+            f"4. நன்றி சொல்லும்போது அல்லது கேள்விகள் இல்லை என்றால்: 'நன்றி {honorific_ta}, நல்ல நாள் வாழ்த்துகள்!'\n"
+            "5. பிற சூழ்நிலைகளுக்கு (சர்ச்சை, நீட்டிப்பு, அவமரியாதை) 1 வாக்கியத்தில் தொழில்முறையாக கையாளுங்கள்.\n"
+            + borrower_info_str
+        )
     }
     
-    prompt = f"{sys_prompts.get(language, sys_prompts['en-IN'])}\n\nHistory:\n{conv_history}\n\nUser: {user_text}\n\nAI:"
+    system_prompt = sys_prompts.get(language, sys_prompts['en-IN'])
+    user_message = f"Conversation so far:\n{conv_history}\n\nUser just said: {user_text}\n\nRespond with 1-2 short sentences following the conversation flow above."
     
-    try:
-        response = gemini_client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.7, max_output_tokens=200)
-        )
-        return response.text.strip()
-    except Exception as e:
-        print(f"[GEMINI] ❌ Response generation error: {e}")
-        
-        # Check if it's a 429 error and try fallback to Groq
-        if groq_client and ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)):
-            print(f"[GEMINI] 🚨 Rate limit hit. Attempting fallback to Groq for response...")
-            try:
-                response = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {"role": "system", "content": sys_prompts.get(language, sys_prompts['en-IN'])},
-                        {"role": "user", "content": f"History:\n{conv_history}\n\nUser: {user_text}"}
-                    ],
-                    max_tokens=200,
-                    temperature=0.7
-                )
-                return response.choices[0].message.content.strip()
-            except Exception as ge:
-                print(f"[GROQ] ❌ Fallback response error: {ge}")
-        
-        return FALLBACKS.get(language, FALLBACKS["en-IN"])
+    # PRIMARY: Use sync Groq client (fast, no async issues in Flask)
+    if sync_groq_client:
+        try:
+            response = sync_groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                max_tokens=100,
+                temperature=0.7
+            )
+            result = response.choices[0].message.content.strip()
+            print(f"[GROQ] ✅ Real-time response generated ({len(result)} chars)")
+            return result
+        except Exception as e:
+            print(f"[GROQ] ❌ Sync response error: {e}")
+    
+    # FALLBACK: Use Gemini
+    if gemini_client:
+        try:
+            prompt = f"{system_prompt}\n\n{user_message}\n\nAI (1-2 short sentences only):"
+            response = gemini_client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.7, max_output_tokens=100)
+            )
+            return response.text.strip()
+        except Exception as e:
+            print(f"[GEMINI] ❌ Fallback response error: {e}")
+    
+    return FALLBACKS.get(language, FALLBACKS["en-IN"])
 
 
 # ============================================================
