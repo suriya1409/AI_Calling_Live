@@ -969,14 +969,14 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
         if borrower_id:
             answer_url += f'&borrower_id={borrower_id}'
         
-        print(f"\n[VONAGE] 📞 Making outbound call:")
-        print(f"  To: {to_number}")
-        print(f"  From: {settings.VONAGE_FROM_NUMBER}")
-        print(f"  Language: {language}")
-        print(f"  Borrower: {borrower_id}")
-        print(f"  Answer URL: {answer_url}")
-        print(f"  Event URL: {settings.BASE_URL}/webhooks/event")
+        print(f"\n[VONAGE] 📞 Attempting outbound call to {to_number}...", flush=True)
+        print(f"  From: {settings.VONAGE_FROM_NUMBER}", flush=True)
+        print(f"  Answer URL: {answer_url}", flush=True)
         
+        if not settings.VONAGE_FROM_NUMBER:
+            print("[VONAGE] 🚨 ERROR: VONAGE_FROM_NUMBER is not set in environment variables!", flush=True)
+            return {"success": False, "error": "VONAGE_FROM_NUMBER is not configured"}
+
         response = voice.create_call({
             'to': [{'type': 'phone', 'number': to_number}],
             'from_': {'type': 'phone', 'number': settings.VONAGE_FROM_NUMBER},
@@ -984,7 +984,7 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
             'event_url': [f'{settings.BASE_URL}/webhooks/event']
         })
         
-        print(f"[VONAGE] ✅ Call initiated! UUID: {response.uuid}")
+        print(f"[VONAGE] ✅ Call successfully initiated! UUID: {response.uuid}", flush=True)
         
         return {
             "success": True,
@@ -994,8 +994,14 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
         }
         
     except Exception as e:
-        print(f"[VONAGE] ❌ Outbound Error: {e}")
-        return {"success": False, "error": str(e)}
+        error_msg = str(e)
+        print(f"[VONAGE] ❌ Outbound Error Detail: {error_msg}", flush=True)
+        # Check for common Vonage errors
+        if "401" in error_msg:
+            print("[VONAGE] 🚨 Authentication Failed: Check your API Key, Secret, and Application ID.", flush=True)
+        elif "429" in error_msg:
+            print("[VONAGE] 🚨 Rate Limit: Too many requests.", flush=True)
+        return {"success": False, "error": error_msg}
 
 def get_call_data_store():
     return call_data

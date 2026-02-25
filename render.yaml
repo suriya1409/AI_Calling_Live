@@ -23,6 +23,10 @@ services:
         fromValue: ${VONAGE_APPLICATION_ID}
       - key: VONAGE_PRIVATE_KEY
         fromValue: ${VONAGE_PRIVATE_KEY}
+      - key: VONAGE_FROM_NUMBER
+        fromValue: ${VONAGE_FROM_NUMBER}
+      - key: PYTHONUNBUFFERED
+        value: "1"
       - key: GROQ_API_KEY
         fromValue: ${GROQ_API_KEY}
       - key: BASE_URL
