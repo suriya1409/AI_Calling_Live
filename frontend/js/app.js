@@ -1,7 +1,7 @@
 // API Configuration
 const API_BASE_URL = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
     ? 'http://127.0.0.1:8000'
-    : 'https://ai-finance-ckpj.onrender.com'; // Actual Render URL detected from logs
+    : 'https://ai-calling-live.onrender.com'; // New Render URL from scratch deployment
 
 // Global state
 let currentKpiData = null;
