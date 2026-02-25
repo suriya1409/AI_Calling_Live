@@ -21,6 +21,8 @@ services:
         fromValue: ${VONAGE_API_SECRET}
       - key: VONAGE_APPLICATION_ID
         fromValue: ${VONAGE_APPLICATION_ID}
+      - key: VONAGE_PRIVATE_KEY
+        fromValue: ${VONAGE_PRIVATE_KEY}
       - key: GROQ_API_KEY
         fromValue: ${GROQ_API_KEY}
       - key: BASE_URL

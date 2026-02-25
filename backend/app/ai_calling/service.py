@@ -54,9 +54,12 @@ audio_cache = {}
 
 # Initialize Vonage client
 try:
+    # Use private key content string if available (for Render), otherwise fallback to file path
+    p_key = settings.VONAGE_PRIVATE_KEY if settings.VONAGE_PRIVATE_KEY else settings.VONAGE_PRIVATE_KEY_PATH
+    
     vonage_client = Vonage(Auth(
         application_id=settings.VONAGE_APPLICATION_ID,
-        private_key=settings.VONAGE_PRIVATE_KEY_PATH
+        private_key=p_key
     ))
     voice = vonage_client.voice
     print("[VONAGE] ✅ Vonage Voice client initialized")

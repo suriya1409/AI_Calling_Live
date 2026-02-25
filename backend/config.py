@@ -24,6 +24,7 @@ class Settings:
     VONAGE_API_KEY = os.getenv("VONAGE_API_KEY", "")
     VONAGE_API_SECRET = os.getenv("VONAGE_API_SECRET", "")
     VONAGE_APPLICATION_ID = os.getenv("VONAGE_APPLICATION_ID", "")
+    VONAGE_PRIVATE_KEY = os.getenv("VONAGE_PRIVATE_KEY", "") # Actual key content as string
     VONAGE_PRIVATE_KEY_PATH = os.getenv("VONAGE_PRIVATE_KEY_PATH", "private.key")
     
     # Handle private key path: look in both backend and root
