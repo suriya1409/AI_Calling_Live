@@ -10,6 +10,15 @@ import time
 import json
 from typing import Optional
 
+import os
+import sys
+
+# Add the backend directory to sys.path to ensure 'app' module is found
+# regardless of where the server is started from.
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+if backend_dir not in sys.path:
+    sys.path.append(backend_dir)
+
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
