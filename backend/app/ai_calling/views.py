@@ -569,13 +569,9 @@ async def reset_calls(current_user: dict = Depends(get_current_user)):
 
 @router.post("/trigger_calls", response_model=BulkCallResponse)
 async def trigger_bulk_calls(request: BulkCallRequest, current_user: dict = Depends(get_current_user)):
-    """Trigger bulk calls for current user only.
-    
-    Per-borrower override: If real_call_borrower_ids is provided, borrowers whose
-    NO is in that list will use REAL calls (use_dummy_data=False), regardless of
-    the global use_dummy_data flag. All other borrowers use the global flag.
-    """
+    """Trigger bulk calls for current user only."""
     user_id = str(current_user["_id"])
+    logger.info(f"DEBUG_TRACE: Received bulk call request for {len(request.borrowers)} borrowers")
     if not request.borrowers:
         raise HTTPException(status_code=400, detail="No borrowers")
     
@@ -623,6 +619,7 @@ async def trigger_bulk_calls(request: BulkCallRequest, current_user: dict = Depe
 async def make_single_call(request: SingleCallRequest, current_user: dict = Depends(get_current_user)):
     """Trigger a single call manually for current user"""
     user_id = str(current_user["_id"])
+    logger.info(f"DEBUG_TRACE: Received single call request for {request.to_number}")
     lang = normalize_language(request.language)
     if request.use_dummy_data:
         res = await create_dummy_call(user_id, request.to_number, lang, request.borrower_id, request.intent_for_testing)

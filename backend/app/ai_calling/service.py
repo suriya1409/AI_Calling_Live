@@ -39,7 +39,9 @@ except ImportError:
     print("⚠️  WARNING: groq not installed. Install with: pip install groq")
     GROQ_AVAILABLE = False
 
-from config import settings
+# Configure logging
+import logging
+logger = logging.getLogger(__name__)
 
 # Import standalone model functions
 from app.table_models.call_sessions import create_call_session
@@ -62,9 +64,9 @@ try:
         private_key=p_key
     ))
     voice = vonage_client.voice
-    print("[VONAGE] ✅ Vonage Voice client initialized")
+    logger.info("[VONAGE] ✅ Vonage Voice client initialized")
 except Exception as e:
-    print(f"[VONAGE] ⚠️  Failed to initialize: {e}")
+    logger.error(f"[VONAGE] ⚠️  Failed to initialize: {e}")
     vonage_client = None
     voice = None
 
@@ -73,12 +75,12 @@ gemini_client = None
 if GEMINI_AVAILABLE and settings.GEMINI_API_KEY:
     try:
         gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        print("[GEMINI] ✅ Gemini AI client initialized")
+        logger.info("[GEMINI] ✅ Gemini AI client initialized")
     except Exception as e:
-        print(f"[GEMINI] ⚠️  Failed to initialize: {e}")
+        logger.error(f"[GEMINI] ⚠️  Failed to initialize: {e}")
         gemini_client = None
 else:
-    print("[GEMINI] ⚠️  Gemini not configured - AI analysis will be disabled")
+    logger.warning("[GEMINI] ⚠️  Gemini not configured - AI analysis will be disabled")
 
 # Initialize Groq AI client
 groq_client = None
@@ -87,14 +89,14 @@ print(f"[DEBUG] settings.GROQ_API_KEY present: {bool(settings.GROQ_API_KEY)}")
 
 if GROQ_AVAILABLE and settings.GROQ_API_KEY:
     if "your_groq_api_key_here" in settings.GROQ_API_KEY:
-        print("[GROQ] ⚠️  Groq API key is still the placeholder. Please update .env")
+        logger.warning("[GROQ] ⚠️  Groq API key is still the placeholder. Please update .env")
     else:
         try:
             from groq import AsyncGroq
             groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-            print("[GROQ] ✅ Async Groq AI client initialized")
+            logger.info("[GROQ] ✅ Async Groq AI client initialized")
         except Exception as e:
-            print(f"[GROQ] ⚠️  Failed to initialize: {e}")
+            logger.error(f"[GROQ] ⚠️  Failed to initialize: {e}")
             groq_client = None
 else:
     if not GROQ_AVAILABLE:
