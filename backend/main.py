@@ -55,9 +55,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers (expand as phases progress)
+# Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(ai_calling_router, prefix="/ai_calling", tags=["AI Calling"])
+
+@app.get("/")
+@app.get("/health")
+async def root_health():
+    import logging
+    logging.getLogger(__name__).info("❤️ Health check ping received")
+    return {"status": "healthy", "service": "AI Finance Platform"}
+
+print("🚀 AI Finance Backend is starting...", flush=True)
 app.include_router(data_ingestion_router, prefix="/data_ingestion", tags=["Data Ingestion"])
 
 
