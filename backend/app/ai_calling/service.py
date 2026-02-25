@@ -43,6 +43,8 @@ except ImportError:
 import logging
 logger = logging.getLogger(__name__)
 
+from config import settings
+
 # Import standalone model functions
 from app.table_models.call_sessions import create_call_session
 from app.table_models.borrowers_table import update_borrower
