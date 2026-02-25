@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.flakes/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+myvenv/
+venv/
+ENV/
+env/
+.env
+
+# Environments
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.private.key
+private.key
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Project specific
+.transcripts/
+data_cache.pkl
+logs/

@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ai-finance-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        fromValue: ${MONGO_URI}
+      - key: MONGO_DB_NAME
+        fromValue: ${MONGO_DB_NAME}
+      - key: GEMINI_API_KEY
+        fromValue: ${GEMINI_API_KEY}
+      - key: SARVAM_API_KEY
+        fromValue: ${SARVAM_API_KEY}
+      - key: VONAGE_API_KEY
+        fromValue: ${VONAGE_API_KEY}
+      - key: VONAGE_API_SECRET
+        fromValue: ${VONAGE_API_SECRET}
+      - key: VONAGE_APPLICATION_ID
+        fromValue: ${VONAGE_APPLICATION_ID}
+      - key: GROQ_API_KEY
+        fromValue: ${GROQ_API_KEY}
+      - key: BASE_URL
+        fromValue: ${BASE_URL}
