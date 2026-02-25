@@ -94,6 +94,7 @@ class BorrowerInfo(BaseModel):
 class BulkCallRequest(BaseModel):
     borrowers: List[BorrowerInfo]
     use_dummy_data: bool = True
+    real_call_borrower_ids: List[str] = Field(default_factory=list, description="List of borrower NOs that should use REAL calls (use_dummy_data=False), overriding the global use_dummy_data flag")
 
 class SingleCallRequest(BaseModel):
     to_number: str
@@ -568,25 +569,54 @@ async def reset_calls(current_user: dict = Depends(get_current_user)):
 
 @router.post("/trigger_calls", response_model=BulkCallResponse)
 async def trigger_bulk_calls(request: BulkCallRequest, current_user: dict = Depends(get_current_user)):
-    """Trigger bulk calls for current user only"""
+    """Trigger bulk calls for current user only.
+    
+    Per-borrower override: If real_call_borrower_ids is provided, borrowers whose
+    NO is in that list will use REAL calls (use_dummy_data=False), regardless of
+    the global use_dummy_data flag. All other borrowers use the global flag.
+    """
     user_id = str(current_user["_id"])
     if not request.borrowers:
         raise HTTPException(status_code=400, detail="No borrowers")
+    
+    # Build a set for fast lookup of borrower IDs that should use real calls
+    real_call_ids = set(request.real_call_borrower_ids)
+    has_real_overrides = len(real_call_ids) > 0
+    has_any_real = False
         
     async_tasks = []
     for b in request.borrowers:
         lang = normalize_language(b.preferred_language)
-        async_tasks.append(process_single_call(user_id, b, request.use_dummy_data, lang))
+        
+        # Per-borrower use_dummy_data decision:
+        # If this borrower's NO is in real_call_borrower_ids → real call (False)
+        # Otherwise → use the global flag from the request
+        if has_real_overrides and b.NO in real_call_ids:
+            borrower_use_dummy = False
+            has_any_real = True
+            logger.info(f"[BULK CALL] Borrower {b.NO} → REAL call (override)")
+        else:
+            borrower_use_dummy = request.use_dummy_data
+            logger.info(f"[BULK CALL] Borrower {b.NO} → {'DUMMY' if borrower_use_dummy else 'REAL'} call (global)")
+        
+        async_tasks.append(process_single_call(user_id, b, borrower_use_dummy, lang))
         
     results = await asyncio.gather(*async_tasks)
     
     successful = len([r for r in results if r.success])
+    
+    # Determine mode label
+    if has_real_overrides and has_any_real:
+        mode = "mixed" if request.use_dummy_data else "real"
+    else:
+        mode = "dummy" if request.use_dummy_data else "real"
+    
     return BulkCallResponse(
         total_requests=len(request.borrowers),
         successful_calls=successful,
         failed_calls=len(results) - successful,
         results=list(results),
-        mode="dummy" if request.use_dummy_data else "real"
+        mode=mode
     )
 
 @router.post("/make_call", response_model=CallResponse)
@@ -648,6 +678,26 @@ async def get_call_analysis_api(call_uuid: str, current_user: dict = Depends(get
             "ai_analysis": session['ai_analysis']
         }
     raise HTTPException(status_code=404, detail="Analysis not found or access denied")
+
+@router.get("/borrower_call_status/{borrower_no}")
+async def get_borrower_call_status(borrower_no: str, current_user: dict = Depends(get_current_user)):
+    """Get the latest call status for a borrower from the DB (used for polling real call results)"""
+    user_id = str(current_user["_id"])
+    borrower = await get_borrower_by_no(user_id, borrower_no)
+    if not borrower:
+        raise HTTPException(status_code=404, detail="Borrower not found")
+    return {
+        "NO": borrower.get("NO"),
+        "call_completed": borrower.get("call_completed", False),
+        "call_in_progress": borrower.get("call_in_progress", False),
+        "transcript": borrower.get("transcript"),
+        "ai_summary": borrower.get("ai_summary"),
+        "payment_confirmation": borrower.get("payment_confirmation"),
+        "follow_up_date": borrower.get("follow_up_date"),
+        "call_frequency": borrower.get("call_frequency"),
+        "require_manual_process": borrower.get("require_manual_process", False),
+        "email_to_manager_preview": borrower.get("email_to_manager_preview"),
+    }
 
 @router.get("/health")
 async def health_check():

@@ -950,7 +950,15 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
     if not voice:
         return {"success": False, "error": "Vonage client not initialized"}
     
+    # Clean the number: remove +, spaces, dashes
+    to_number = to_number.strip().replace(' ', '').replace('-', '')
     if to_number.startswith('+'): to_number = to_number[1:]
+    
+    # Auto-prepend 91 (India) country code for 10-digit Indian mobile numbers
+    # Indian mobile numbers start with 6, 7, 8, or 9
+    if len(to_number) == 10 and to_number[0] in '6789':
+        to_number = '91' + to_number
+        print(f"[VONAGE] 📱 Auto-prepended country code: 91 → {to_number}")
     
     try:
         # Include user_id in answer URL for isolation in the webhook handler
@@ -958,12 +966,22 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
         if borrower_id:
             answer_url += f'&borrower_id={borrower_id}'
         
+        print(f"\n[VONAGE] 📞 Making outbound call:")
+        print(f"  To: {to_number}")
+        print(f"  From: {settings.VONAGE_FROM_NUMBER}")
+        print(f"  Language: {language}")
+        print(f"  Borrower: {borrower_id}")
+        print(f"  Answer URL: {answer_url}")
+        print(f"  Event URL: {settings.BASE_URL}/webhooks/event")
+        
         response = voice.create_call({
             'to': [{'type': 'phone', 'number': to_number}],
             'from_': {'type': 'phone', 'number': settings.VONAGE_FROM_NUMBER},
             'answer_url': [answer_url],
             'event_url': [f'{settings.BASE_URL}/webhooks/event']
         })
+        
+        print(f"[VONAGE] ✅ Call initiated! UUID: {response.uuid}")
         
         return {
             "success": True,
@@ -973,7 +991,7 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
         }
         
     except Exception as e:
-        print(f"[ERROR] Outbound Error: {e}")
+        print(f"[VONAGE] ❌ Outbound Error: {e}")
         return {"success": False, "error": str(e)}
 
 def get_call_data_store():

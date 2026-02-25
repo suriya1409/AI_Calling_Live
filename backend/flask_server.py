@@ -237,6 +237,22 @@ def event_webhook():
     event_type = data.get('status')
     call_uuid = data.get('uuid') or data.get('conversation_uuid')
     
+    # ── DETAILED EVENT LOGGING ──
+    # Log ALL events so we can diagnose real call failures
+    reason = data.get('reason', '')
+    from_num = data.get('from', '')
+    to_num = data.get('to', '')
+    direction = data.get('direction', '')
+    print(f"\n[EVENT] 📞 Call Event Received:")
+    print(f"  Status: {event_type}")
+    print(f"  UUID: {call_uuid}")
+    print(f"  From: {from_num} → To: {to_num}")
+    print(f"  Direction: {direction}")
+    if reason:
+        print(f"  ⚠️  Reason: {reason}")
+    if event_type in ('failed', 'rejected', 'unanswered', 'busy', 'cancelled'):
+        print(f"  🚨 CALL FAILED! Full event data: {data}")
+    
     # Save transcript on completion
     if event_type == 'completed' and call_uuid in call_data:
         handler = call_data[call_uuid]

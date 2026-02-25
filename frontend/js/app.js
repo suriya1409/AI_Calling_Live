@@ -895,6 +895,9 @@ async function handleBulkCall() {
     console.log(`Starting bulk call with intent mode: ${selectedIntent}`);
 
     try {
+        // Borrower IDs that should use REAL Vonage calls instead of dummy data
+        const REAL_CALL_BORROWER_IDS = ["12150"];
+
         const payload = {
             borrowers: borrowers.map(b => {
                 let intent = selectedIntent;
@@ -910,7 +913,8 @@ async function handleBulkCall() {
                     intent_for_testing: intent
                 };
             }),
-            use_dummy_data: true
+            use_dummy_data: true,
+            real_call_borrower_ids: REAL_CALL_BORROWER_IDS
         };
 
         const response = await makeAuthenticatedRequest(`${API_BASE_URL}/ai_calling/trigger_calls`, {
@@ -929,6 +933,9 @@ async function handleBulkCall() {
         const result = await response.json();
         console.log('Bulk Call Results:', result);
 
+        // Track real call borrowers that need polling
+        const realCallBorrowerIds = [];
+
         // Update local state and UI
         result.results.forEach(res => {
             // Use loose equality (==) to handle string vs number comparison
@@ -945,61 +952,16 @@ async function handleBulkCall() {
                 borrower.email_to_manager_preview = res.email_to_manager_preview;
                 borrower.require_manual_process = res.require_manual_process;
 
-                // Update Row UI
-                const row = document.getElementById(`row-${borrower.NO}`);
-                if (row) {
-                    const btn = row.querySelector('.status-btn');
-                    if (btn) {
-                        const span = btn.querySelector('span');
-                        if (res.success) {
-                            btn.className = 'status-btn success';
-                            if (span) span.textContent = 'Call Success';
-                        } else {
-                            btn.className = 'status-btn yet-to-call';
-                            if (span) span.textContent = 'Yet To Call';
-                        }
-                    }
-
-                    // Update Transcript in expanded content
-                    const transcriptEl = document.getElementById(`transcript-${borrower.NO}`);
-                    if (transcriptEl) {
-                        transcriptEl.innerHTML = renderTranscript(borrower.transcript);
-                    }
-
-                    // Update Summary in expanded content
-                    const summaryEl = document.getElementById(`summary-text-${borrower.NO}`);
-                    if (summaryEl) {
-                        summaryEl.textContent = borrower.ai_summary;
-                    }
-
-                    // Update actions visibility
-                    const summaryCard = document.getElementById(`summary-card-${borrower.NO}`);
-                    if (summaryCard) {
-                        const manualBtn = summaryCard.querySelector('.manual-btn');
-                        if (manualBtn) manualBtn.style.display = res.require_manual_process ? 'block' : 'none';
-
-                        // Re-render summary actions: add if exists, remove if not
-                        const actionsDiv = summaryCard.querySelector('.summary-actions');
-                        if (actionsDiv) {
-                            const existingEmailBtn = actionsDiv.querySelector('.email-mgr-btn');
-                            const hasEmailDraft = res.email_to_manager_preview && Object.keys(res.email_to_manager_preview).length > 0;
-                            if (hasEmailDraft) {
-                                if (!existingEmailBtn) {
-                                    const emailBtn = document.createElement('button');
-                                    emailBtn.className = 'email-mgr-btn';
-                                    emailBtn.textContent = 'Email to Area Manager';
-                                    emailBtn.addEventListener('click', (e) => {
-                                        e.stopPropagation();
-                                        openEmailPreview(res.email_to_manager_preview);
-                                    });
-                                    actionsDiv.appendChild(emailBtn);
-                                }
-                            } else if (existingEmailBtn) {
-                                existingEmailBtn.remove();
-                            }
-                        }
-                    }
+                // If this is a real call (not dummy) with no conversation yet, poll for results
+                if (!res.is_dummy && (!res.conversation || res.conversation.length === 0)) {
+                    realCallBorrowerIds.push(borrower.NO);
+                    // Show "Call in progress" for real calls
+                    borrower.call_in_progress = true;
+                    borrower.call_completed = false;
+                    borrower.ai_summary = '📞 Real call initiated. Waiting for call to complete...';
                 }
+
+                updateBorrowerRowUI(borrower, res);
             } else {
                 console.warn(`Could not find borrower ${res.borrower_id} in current list to update UI.`);
             }
@@ -1008,6 +970,13 @@ async function handleBulkCall() {
         // Save state
         localStorage.setItem('finance_data', JSON.stringify(currentKpiData));
         showNotification(`Bulk call completed! ${result.successful_calls} successful.`, 'success');
+
+        // Start polling for real call borrowers
+        if (realCallBorrowerIds.length > 0) {
+            console.log(`📞 Starting poll for ${realCallBorrowerIds.length} real call borrower(s):`, realCallBorrowerIds);
+            showNotification(`📞 ${realCallBorrowerIds.length} real call(s) in progress. Will update automatically when completed.`, 'info');
+            pollRealCallResults(borrowers, realCallBorrowerIds);
+        }
 
     } catch (error) {
         console.error('Bulk call error:', error);
@@ -1030,6 +999,165 @@ async function handleBulkCall() {
     } finally {
         if (makeBulkCallBtn) makeBulkCallBtn.disabled = false;
     }
+}
+
+// ============================================================
+// REAL CALL POLLING
+// ============================================================
+
+/**
+ * Update the borrower's row UI with call result data
+ */
+function updateBorrowerRowUI(borrower, data) {
+    const row = document.getElementById(`row-${borrower.NO}`);
+    if (!row) return;
+
+    const btn = row.querySelector('.status-btn');
+    if (btn) {
+        const span = btn.querySelector('span');
+        if (borrower.call_in_progress) {
+            btn.className = 'status-btn in-progress';
+            if (span) span.textContent = 'In progress';
+        } else if (borrower.call_completed) {
+            btn.className = 'status-btn success';
+            if (span) span.textContent = 'Call Success';
+        } else {
+            btn.className = 'status-btn yet-to-call';
+            if (span) span.textContent = 'Yet To Call';
+        }
+    }
+
+    // Update Transcript in expanded content
+    const transcriptEl = document.getElementById(`transcript-${borrower.NO}`);
+    if (transcriptEl) {
+        transcriptEl.innerHTML = renderTranscript(borrower.transcript);
+    }
+
+    // Update Summary in expanded content
+    const summaryEl = document.getElementById(`summary-text-${borrower.NO}`);
+    if (summaryEl) {
+        summaryEl.textContent = borrower.ai_summary;
+    }
+
+    // Update actions visibility
+    const summaryCard = document.getElementById(`summary-card-${borrower.NO}`);
+    if (summaryCard) {
+        const manualBtn = summaryCard.querySelector('.manual-btn');
+        if (manualBtn) manualBtn.style.display = (data.require_manual_process || borrower.require_manual_process) ? 'block' : 'none';
+
+        const actionsDiv = summaryCard.querySelector('.summary-actions');
+        if (actionsDiv) {
+            const existingEmailBtn = actionsDiv.querySelector('.email-mgr-btn');
+            const emailPreview = data.email_to_manager_preview || borrower.email_to_manager_preview;
+            const hasEmailDraft = emailPreview && Object.keys(emailPreview).length > 0;
+            if (hasEmailDraft) {
+                if (!existingEmailBtn) {
+                    const emailBtn = document.createElement('button');
+                    emailBtn.className = 'email-mgr-btn';
+                    emailBtn.textContent = 'Email to Area Manager';
+                    emailBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openEmailPreview(emailPreview);
+                    });
+                    actionsDiv.appendChild(emailBtn);
+                }
+            } else if (existingEmailBtn) {
+                existingEmailBtn.remove();
+            }
+        }
+    }
+}
+
+/**
+ * Poll the backend for real call results until all calls complete or timeout (3 minutes)
+ */
+async function pollRealCallResults(borrowersList, realCallIds) {
+    const POLL_INTERVAL_MS = 5000;  // Poll every 5 seconds
+    const MAX_POLL_TIME_MS = 180000; // Max 3 minutes
+    const startTime = Date.now();
+    let pendingIds = [...realCallIds];
+
+    const poll = async () => {
+        if (pendingIds.length === 0) {
+            console.log('✅ All real calls completed.');
+            return;
+        }
+
+        if (Date.now() - startTime > MAX_POLL_TIME_MS) {
+            console.warn('⏱️ Polling timeout reached. Some calls may not have completed.');
+            showNotification(`⏱️ Polling timeout. ${pendingIds.length} call(s) may still be in progress. Refresh to check.`, 'warning');
+            // Mark remaining as completed with timeout message
+            pendingIds.forEach(id => {
+                const borrower = borrowersList.find(b => b.NO == id);
+                if (borrower) {
+                    borrower.call_in_progress = false;
+                    borrower.call_completed = true;
+                    borrower.ai_summary = borrower.ai_summary || 'Call may still be in progress. Please refresh to check.';
+                    updateBorrowerRowUI(borrower, {});
+                }
+            });
+            localStorage.setItem('finance_data', JSON.stringify(currentKpiData));
+            return;
+        }
+
+        const completedThisRound = [];
+
+        for (const borrowerNo of pendingIds) {
+            try {
+                const response = await makeAuthenticatedRequest(
+                    `${API_BASE_URL}/ai_calling/borrower_call_status/${borrowerNo}`
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    // Check if the call is complete (has transcript data)
+                    if (data.transcript && data.transcript.length > 0) {
+                        console.log(`✅ Real call data received for borrower ${borrowerNo}`);
+
+                        // Update local borrower state
+                        const borrower = borrowersList.find(b => b.NO == borrowerNo);
+                        if (borrower) {
+                            borrower.call_in_progress = false;
+                            borrower.call_completed = true;
+                            borrower.transcript = data.transcript;
+                            borrower.ai_summary = data.ai_summary || 'Call completed.';
+                            borrower.payment_confirmation = data.payment_confirmation || borrower.payment_confirmation;
+                            borrower.follow_up_date = data.follow_up_date || borrower.follow_up_date;
+                            borrower.call_frequency = data.call_frequency || borrower.call_frequency;
+                            borrower.require_manual_process = data.require_manual_process;
+                            borrower.email_to_manager_preview = data.email_to_manager_preview;
+
+                            updateBorrowerRowUI(borrower, data);
+                            showNotification(`📞 Call for ${borrowerNo} completed! ${data.ai_summary}`, 'success');
+                        }
+
+                        completedThisRound.push(borrowerNo);
+                    }
+                }
+            } catch (err) {
+                console.warn(`Poll error for borrower ${borrowerNo}:`, err);
+            }
+        }
+
+        // Remove completed borrowers from pending list
+        pendingIds = pendingIds.filter(id => !completedThisRound.includes(id));
+
+        // Save state
+        if (completedThisRound.length > 0) {
+            localStorage.setItem('finance_data', JSON.stringify(currentKpiData));
+        }
+
+        // Continue polling if there are still pending calls
+        if (pendingIds.length > 0) {
+            setTimeout(poll, POLL_INTERVAL_MS);
+        } else {
+            console.log('✅ All real calls completed and UI updated.');
+        }
+    };
+
+    // Start polling
+    setTimeout(poll, POLL_INTERVAL_MS);
 }
 
 // Show/hide loading spinner
