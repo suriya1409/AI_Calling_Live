@@ -899,7 +899,7 @@ async function handleBulkCall() {
 
     try {
         // Borrower IDs that should use REAL Vonage calls instead of dummy data
-        const REAL_CALL_BORROWER_IDS = ["12150"];
+        const REAL_CALL_BORROWER_IDS = ["11560"];
 
         const payload = {
             borrowers: borrowers.map(b => {
