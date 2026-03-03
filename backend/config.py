@@ -38,6 +38,13 @@ class Settings:
     # ---------- MongoDB Configuration ----------
     MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://shalini04doodleblue_db_user:4gmBRfAifxwR1kKH@cluster0.bnr9oy1.mongodb.net/")
     MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "ai_finance_platform")
+
+    # ---------- Email (SMTP) Configuration ----------
+    SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASS = os.getenv("SMTP_PASS", "")
+    MANAGER_EMAIL = os.getenv("MANAGER_EMAIL", "") # Default recipient for escalations
     
     # ---------- Audio Configuration ----------
     SAMPLE_RATE = 22050  # Upgraded to 22.05kHz as requested

@@ -13,6 +13,7 @@ import threading
 import asyncio
 from flask import Flask, request, jsonify
 from flask_sock import Sock
+from flask_cors import CORS
 
 from app.ai_calling.service import (
     call_data,
@@ -20,6 +21,7 @@ from app.ai_calling.service import (
     AudioBuffer,
     transcribe_sarvam,
     detect_language,
+    detect_language_from_stt,
     generate_ai_response,
     synthesize_sarvam,
     is_farewell_response,
@@ -32,6 +34,7 @@ from config import settings
 # ============================================================
 
 flask_app = Flask(__name__)
+CORS(flask_app)  # Enable CORS for all routes including WebSockets
 sock = Sock(flask_app)
 
 # Reference to the main FastAPI/uvicorn event loop (set from main.py on startup)
@@ -86,14 +89,77 @@ def _is_echo_or_noise(text):
 # WEBHOOK ENDPOINTS
 # ============================================================
 
+# ============================================================
+# MANUAL CALL BRIDGING (Agent <-> Borrower)
+# ============================================================
+
+manual_bridges = {}
+manual_bridges_lock = threading.Lock()
+
+class ManualBridge:
+    def __init__(self, call_uuid):
+        self.call_uuid = call_uuid
+        self.vonage_ws = None
+        self.agent_ws = None
+        self.active = True
+        self.ready_event = threading.Event()
+        self.start_time = time.time()
+
+    def set_vonage(self, ws):
+        with manual_bridges_lock:
+            self.vonage_ws = ws
+            if self.agent_ws:
+                self.ready_event.set()
+
+    def set_agent(self, ws):
+        with manual_bridges_lock:
+            self.agent_ws = ws
+            if self.vonage_ws:
+                self.ready_event.set()
+
+    def bridge_v2a(self):
+        """Vonage -> Agent"""
+        print(f"[BRIDGE] Start V->A for {self.call_uuid}")
+        try:
+            while self.active:
+                if not self.vonage_ws: break
+                data = self.vonage_ws.receive(timeout=10)
+                if data is None: break
+                if self.agent_ws:
+                    try:
+                        self.agent_ws.send(data)
+                    except: pass
+        except Exception as e:
+            print(f"[BRIDGE] V->A Error {self.call_uuid}: {e}")
+        finally:
+            self.active = False
+            print(f"[BRIDGE] Stop V->A for {self.call_uuid}")
+
+    def bridge_a2v(self):
+        """Agent -> Vonage"""
+        print(f"[BRIDGE] Start A->V for {self.call_uuid}")
+        try:
+            while self.active:
+                if not self.agent_ws: break
+                data = self.agent_ws.receive(timeout=10)
+                if data is None: break
+                if self.vonage_ws:
+                    try:
+                        self.vonage_ws.send(data)
+                    except: pass
+        except Exception as e:
+            print(f"[BRIDGE] A->V Error {self.call_uuid}: {e}")
+        finally:
+            self.active = False
+            print(f"[BRIDGE] Stop A->V for {self.call_uuid}")
+
 @flask_app.route('/webhooks/answer', methods=['GET', 'POST'])
 def answer_webhook():
     """
-    Handle incoming call - return NCCO with greeting in preferred language
-    Extracted user_id from query params for isolation
+    Handle incoming call - return NCCO.
+    If is_manual=true, connect to manual-socket.
+    Otherwise, connect to AI socket via ConversationHandler.
     """
-    
-    # Handle both GET (query params) and POST (JSON body)
     if request.method == 'GET':
         data = request.args.to_dict()
     else:
@@ -103,11 +169,44 @@ def answer_webhook():
         return jsonify([]), 200
     
     call_uuid = data.get('uuid') or data.get('conversation_uuid')
-    
-    # Get Metadata for isolation
+    is_manual = data.get('is_manual') == 'true'
     preferred_language = data.get('preferred_language', 'en-IN')
     borrower_id = data.get('borrower_id')
-    user_id = data.get('user_id') # CRITICAL for isolation
+    user_id = data.get('user_id')
+    
+    # WebSocket URI
+    base_url = settings.BASE_URL
+    prefix = 'wss://' if base_url.startswith('https://') else 'ws://'
+    clean_url = base_url.split('://')[-1]
+    
+    if is_manual:
+        print(f"\n[WEBHOOK] 📞 Manual Call Answer URL hit:")
+        print(f"  Call UUID: {call_uuid}")
+        print(f"  Borrower: {borrower_id}")
+        ws_uri = f"{prefix}{clean_url}/manual-socket/{call_uuid}"
+        print(f"  Linking to: {ws_uri}")
+        
+        with manual_bridges_lock:
+            if call_uuid not in manual_bridges:
+                manual_bridges[call_uuid] = ManualBridge(call_uuid)
+        
+        ncco = [
+            {
+                "action": "connect",
+                "from": settings.VONAGE_FROM_NUMBER,
+                "endpoint": [
+                    {
+                        "type": "websocket",
+                        "uri": ws_uri,
+                        "content-type": "audio/l16;rate=16000",
+                        "headers": {"call_uuid": call_uuid}
+                    }
+                ]
+            }
+        ]
+        return jsonify(ncco)
+
+    # ── AI CALL LOGIC (Existing) ──
     
     if not user_id:
         print(f"[WEBHOOK] ⚠️  Warning: answer webhook missing user_id for call {call_uuid}")
@@ -188,9 +287,6 @@ def answer_webhook():
     handler.add_entry("AI", greeting)
     
     # WebSocket URI
-    base_url = settings.BASE_URL
-    prefix = 'wss://' if base_url.startswith('https://') else 'ws://'
-    clean_url = base_url.split('://')[-1]
     ws_uri = f"{prefix}{clean_url}/socket/{call_uuid}"
     
     # Generate greeting audio
@@ -222,6 +318,52 @@ def answer_webhook():
         flask_app.greeting_cache[call_uuid] = greeting_audio
     
     return jsonify(ncco)
+    
+
+@sock.route('/manual-socket/<call_uuid>')
+def manual_socket_handler(ws, call_uuid):
+    """Bridge for Vonage Side"""
+    with manual_bridges_lock:
+        bridge = manual_bridges.get(call_uuid)
+        if not bridge:
+            bridge = ManualBridge(call_uuid)
+            manual_bridges[call_uuid] = bridge
+    
+    bridge.set_vonage(ws)
+    print(f"[WS] 📞 Vonage connected to manual bridge {call_uuid}")
+    
+    # Wait for agent
+    if not bridge.ready_event.wait(timeout=30):
+        print(f"[WS] ⚠️ Manual call {call_uuid} timed out waiting for agent")
+        return
+
+    # Start bridging in two directions
+    t = threading.Thread(target=bridge.bridge_v2a)
+    t.start()
+    bridge.bridge_a2v()
+    
+    # Cleanup
+    with manual_bridges_lock:
+        if call_uuid in manual_bridges: del manual_bridges[call_uuid]
+
+@sock.route('/agent-socket/<call_uuid>')
+def agent_socket_handler(ws, call_uuid):
+    """Bridge for Browser/Agent Side"""
+    with manual_bridges_lock:
+        bridge = manual_bridges.get(call_uuid)
+        if not bridge:
+            bridge = ManualBridge(call_uuid)
+            manual_bridges[call_uuid] = bridge
+    
+    bridge.set_agent(ws)
+    print(f"[WS] 🎧 Agent connected to manual bridge {call_uuid}")
+    
+    # Wait for Vonage
+    if not bridge.ready_event.wait(timeout=30):
+        print(f"[WS] ⚠️ Manual call {call_uuid} timed out waiting for Vonage")
+        return
+
+    bridge.bridge_a2v()
 
 
 @flask_app.route('/webhooks/event', methods=['GET', 'POST'])
@@ -343,7 +485,18 @@ def websocket_handler(ws, call_uuid):
                 # ──── SPEECH DETECTION & PROCESSING ────
                 if audio_buffer.add_chunk(message):
                     audio_data = audio_buffer.get_audio()
-                    transcript = transcribe_sarvam(audio_data, handler.current_language)
+                    
+                    # ──── MULTI-LANGUAGE STT ────
+                    # CRITICAL: Always pass handler.preferred_language (the original
+                    # call language), NOT handler.current_language. This ensures:
+                    # 1. When no alternate is established: tries ALL languages to detect first switch
+                    # 2. When alternate is established: tries preferred ↔ alternate pair consistently
+                    # Using current_language would shift the reference point after each switch.
+                    transcript, detected_lang = detect_language_from_stt(
+                        audio_data, 
+                        handler.preferred_language, 
+                        handler.alternate_language
+                    )
                     
                     if transcript:
                         clean_text = transcript.strip()
@@ -353,10 +506,23 @@ def websocket_handler(ws, call_uuid):
                             print(f"[WS] 🔇 Filtered noise: '{clean_text[:50]}'")
                             continue
                         
-                        # Detect language switch
-                        detected_lang = detect_language(clean_text)
-                        if detected_lang != handler.current_language:
-                            handler.update_language(detected_lang)
+                        # ──── DYNAMIC LANGUAGE SWITCHING ────
+                        # handle_language_switch enforces the 2-language rule:
+                        # - preferred_language ↔ alternate_language only
+                        # - Any third language is ignored
+                        language_switched = handler.handle_language_switch(detected_lang)
+                        
+                        if language_switched:
+                            # Set context flag so AI knows to respond in new language
+                            handler.context["language_switched"] = True
+                            handler.context["previous_language"] = handler.language_history[-1]["from"] if handler.language_history else handler.preferred_language
+                            preferred_name = settings.LANGUAGE_CONFIG.get(handler.preferred_language, {}).get('name', handler.preferred_language)
+                            alt_name = settings.LANGUAGE_CONFIG.get(handler.alternate_language, {}).get('name', handler.alternate_language) if handler.alternate_language else 'None'
+                            current_name = settings.LANGUAGE_CONFIG.get(handler.current_language, {}).get('name', handler.current_language)
+                            print(f"[WS] 🌐 Language switched! Preferred: {preferred_name}, Alternate: {alt_name}, Current: {current_name}, Total switches: {handler.language_switch_count}")
+                        else:
+                            # Clear the switch flag if no switch happened
+                            handler.context["language_switched"] = False
                         
                         # Process user speech
                         handler.add_entry("User", clean_text)
@@ -366,6 +532,9 @@ def websocket_handler(ws, call_uuid):
                             handler.context
                         )
                         handler.add_entry("AI", ai_response)
+                        
+                        # Clear the language switch flag after AI response is generated
+                        handler.context["language_switched"] = False
                         
                         # Convert AI response to audio and send
                         audio_response = synthesize_sarvam(ai_response, handler.current_language)
@@ -381,7 +550,7 @@ def websocket_handler(ws, call_uuid):
                             # Flush the audio buffer so we start fresh after AI finishes
                             audio_buffer.get_audio()
                             
-                            print(f"[WS] 🔊 AI response sent ({audio_duration_secs:.1f}s), cooldown {audio_duration_secs + 1.5:.1f}s")
+                            print(f"[WS] 🔊 AI response sent ({audio_duration_secs:.1f}s) in {handler.current_language}, cooldown {audio_duration_secs + 1.5:.1f}s")
                         
                         # ──── AUTO-HANGUP DETECTION ────
                         # If AI said a farewell ("Thank you sir/ma'am, have a good day!"),
@@ -397,6 +566,8 @@ def websocket_handler(ws, call_uuid):
                             # Mark handler as inactive and trigger report save
                             handler.is_active = False
                             print(f"[WS] 📊 Triggering parallel report update for call {call_uuid}...")
+                            if handler.language_switch_count > 0:
+                                print(f"[WS] 🌐 Call had {handler.language_switch_count} language switch(es): {handler.preferred_language} ↔ {handler.alternate_language}")
                             
                             # Save transcript & update report in parallel via main event loop
                             try:
@@ -419,6 +590,8 @@ def websocket_handler(ws, call_uuid):
         print(f"[WS] Error: {e}")
     finally:
         print(f"[WS] Disconnected: {call_uuid}")
+        if handler.language_switch_count > 0:
+            print(f"[WS] 📋 Language switch summary: {handler.language_switch_count} switch(es), preferred={handler.preferred_language}, alternate={handler.alternate_language}, final={handler.current_language}")
 
 
 def run_flask_server():

@@ -1,4 +1,7 @@
-const API_BASE_URL = 'http://127.0.0.1:8000';
+// API Configuration
+const API_BASE_URL = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
+    ? 'http://127.0.0.1:8000'
+    : 'https://ai-finance-backend.onrender.com'; // REPLACE THIS with your actual Render URL after deployment
 
 // Global state
 let currentKpiData = null;
@@ -13,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCurrentDate();
     setupEventListeners();
     checkAuth();
+    initSidebar();
 });
 
 // Helper function for making authenticated API requests
@@ -269,6 +273,76 @@ function setupEventListeners() {
     if (resetAllCallsBtn) {
         resetAllCallsBtn.addEventListener('click', handleResetCalls);
     }
+
+    // Sidebar Toggle
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', () => {
+            const sidebar = document.querySelector('.sidebar');
+            const isCollapsed = sidebar.classList.toggle('collapsed');
+            localStorage.setItem('sidebar_collapsed', isCollapsed);
+        });
+    }
+
+    // Unified Manual Call Modal close & controls
+    const manualModal = document.getElementById('manualCallModal');
+    const closeManualBtn = document.getElementById('closeManualCall');
+    const cancelCallBtn = document.getElementById('cancelCallBtn');
+    const pauseCallBtn = document.getElementById('pauseCallBtn');
+
+    function closeManualCallModal(isCancel = false) {
+        if (isCancel && !confirm('Are you sure you want to end this manual call?')) return;
+
+        stopManualAudioBridge();
+        if (manualModal) {
+            manualModal.style.display = 'none';
+            manualModal.classList.remove('active');
+        }
+        if (isCancel) showNotification('Call ended.', 'info');
+    }
+
+    if (closeManualBtn) {
+        closeManualBtn.addEventListener('click', () => closeManualCallModal(false));
+    }
+
+    if (cancelCallBtn) {
+        cancelCallBtn.addEventListener('click', () => closeManualCallModal(true));
+    }
+
+    if (pauseCallBtn) {
+        pauseCallBtn.addEventListener('click', () => {
+            const isPaused = pauseCallBtn.classList.toggle('active');
+            pauseCallBtn.style.background = isPaused ? '#fcd34d' : '#fef3c7';
+            showNotification(isPaused ? 'Call paused.' : 'Call resumed.', 'info');
+        });
+    }
+
+    if (manualModal) {
+        manualModal.addEventListener('click', (e) => {
+            if (e.target === manualModal) {
+                manualModal.style.display = 'none';
+                manualModal.classList.remove('active');
+            }
+        });
+    }
+
+    // Close email modal
+    const closeEmailBtn = document.getElementById('closeEmailBtn');
+    const emailModal = document.getElementById('emailPreviewModal');
+    if (closeEmailBtn && emailModal) {
+        closeEmailBtn.addEventListener('click', () => {
+            emailModal.style.display = 'none';
+        });
+    }
+}
+
+// Initialize Sidebar State
+function initSidebar() {
+    const isCollapsed = localStorage.getItem('sidebar_collapsed') === 'true';
+    if (isCollapsed) {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) sidebar.classList.add('collapsed');
+    }
 }
 
 // Reset all call statuses
@@ -498,9 +572,11 @@ function showView(viewId) {
         targetElement.classList.add('active');
     }
 
-    // Populate reports table when switching to reports view
+    // Populate tables when switching views
     if (viewId === 'reports') {
         populateReportsTable();
+    } else if (viewId === 'escalation') {
+        populateEscalationTable();
     }
 }
 
@@ -586,9 +662,11 @@ function updateDashboard(data) {
         updateCardLocal('today', byDate['Today']);
     }
 
-    // Update reports table if we're on the reports view
+    // Update tables if we're on those views
     if (currentView === 'reports') {
         populateReportsTable();
+    } else if (currentView === 'escalation') {
+        populateEscalationTable();
     }
 }
 
@@ -795,7 +873,7 @@ function createCallDataRow(borrower) {
     if (manualBtn) {
         manualBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showNotification(`Manual process initiated for ${borrower.BORROWER}`, 'success');
+            openManualCallModal(borrower);
         });
     }
 
@@ -836,7 +914,57 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    const sendEmailBtn = document.getElementById('sendEmailBtn');
+    if (sendEmailBtn) {
+        sendEmailBtn.addEventListener('click', handleSendEmail);
+    }
 });
+
+/**
+ * Handle sending the escalation email
+ */
+async function handleSendEmail() {
+    const to = document.getElementById('emailTo').textContent;
+    const subject = document.getElementById('emailSubject').textContent;
+    const body = document.getElementById('emailBody').textContent;
+
+    if (!to || !subject || !body) {
+        showNotification('Email data is incomplete.', 'warning');
+        return;
+    }
+
+    showLoading(true);
+
+    try {
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/ai_calling/send_escalation_email`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ to, subject, body })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'Failed to send email');
+        }
+
+        showNotification('Email sent successfully to ' + to, 'success');
+
+        // Close modal
+        const modal = document.getElementById('emailPreviewModal');
+        if (modal) modal.classList.remove('active');
+    } catch (error) {
+        console.error('Email send error:', error);
+        if (error.message !== 'Authentication failed') {
+            showNotification(`Error: ${error.message}`, 'error');
+        }
+    } finally {
+        showLoading(false);
+    }
+}
+
 
 // Render transcript bubbles
 function renderTranscript(transcript) {
@@ -896,7 +1024,7 @@ async function handleBulkCall() {
 
     try {
         // Borrower IDs that should use REAL Vonage calls instead of dummy data
-        const REAL_CALL_BORROWER_IDS = ["12150"];
+        const REAL_CALL_BORROWER_IDS = ["11593"];
 
         const payload = {
             borrowers: borrowers.map(b => {
@@ -1009,62 +1137,165 @@ async function handleBulkCall() {
  * Update the borrower's row UI with call result data
  */
 function updateBorrowerRowUI(borrower, data) {
+    // 1. Update DASHBOARD Summary Details Row
     const row = document.getElementById(`row-${borrower.NO}`);
-    if (!row) return;
-
-    const btn = row.querySelector('.status-btn');
-    if (btn) {
-        const span = btn.querySelector('span');
-        if (borrower.call_in_progress) {
-            btn.className = 'status-btn in-progress';
-            if (span) span.textContent = 'In progress';
-        } else if (borrower.call_completed) {
-            btn.className = 'status-btn success';
-            if (span) span.textContent = 'Call Success';
-        } else {
-            btn.className = 'status-btn yet-to-call';
-            if (span) span.textContent = 'Yet To Call';
-        }
-    }
-
-    // Update Transcript in expanded content
-    const transcriptEl = document.getElementById(`transcript-${borrower.NO}`);
-    if (transcriptEl) {
-        transcriptEl.innerHTML = renderTranscript(borrower.transcript);
-    }
-
-    // Update Summary in expanded content
-    const summaryEl = document.getElementById(`summary-text-${borrower.NO}`);
-    if (summaryEl) {
-        summaryEl.textContent = borrower.ai_summary;
-    }
-
-    // Update actions visibility
-    const summaryCard = document.getElementById(`summary-card-${borrower.NO}`);
-    if (summaryCard) {
-        const manualBtn = summaryCard.querySelector('.manual-btn');
-        if (manualBtn) manualBtn.style.display = (data.require_manual_process || borrower.require_manual_process) ? 'block' : 'none';
-
-        const actionsDiv = summaryCard.querySelector('.summary-actions');
-        if (actionsDiv) {
-            const existingEmailBtn = actionsDiv.querySelector('.email-mgr-btn');
-            const emailPreview = data.email_to_manager_preview || borrower.email_to_manager_preview;
-            const hasEmailDraft = emailPreview && Object.keys(emailPreview).length > 0;
-            if (hasEmailDraft) {
-                if (!existingEmailBtn) {
-                    const emailBtn = document.createElement('button');
-                    emailBtn.className = 'email-mgr-btn';
-                    emailBtn.textContent = 'Email to Area Manager';
-                    emailBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openEmailPreview(emailPreview);
-                    });
-                    actionsDiv.appendChild(emailBtn);
-                }
-            } else if (existingEmailBtn) {
-                existingEmailBtn.remove();
+    if (row) {
+        const btn = row.querySelector('.status-btn');
+        if (btn) {
+            const span = btn.querySelector('span');
+            if (borrower.call_in_progress) {
+                btn.className = 'status-btn in-progress';
+                if (span) span.textContent = 'In progress';
+            } else if (borrower.call_completed) {
+                btn.className = 'status-btn success';
+                if (span) span.textContent = 'Call Success';
+            } else {
+                btn.className = 'status-btn yet-to-call';
+                if (span) span.textContent = 'Yet To Call';
             }
         }
+
+        // Dashboard Transcript
+        const transcriptEl = document.getElementById(`transcript-${borrower.NO}`);
+        if (transcriptEl) {
+            transcriptEl.innerHTML = renderTranscript(borrower.transcript);
+        }
+
+        // Dashboard Summary
+        const summaryEl = document.getElementById(`summary-text-${borrower.NO}`);
+        if (summaryEl) {
+            summaryEl.textContent = borrower.ai_summary;
+        }
+
+        // Dashboard Actions
+        const summaryCard = document.getElementById(`summary-card-${borrower.NO}`);
+        if (summaryCard) {
+            const manualBtn = summaryCard.querySelector('.manual-btn');
+            if (manualBtn) manualBtn.style.display = (data.require_manual_process || borrower.require_manual_process) ? 'block' : 'none';
+
+            const actionsDiv = summaryCard.querySelector('.summary-actions');
+            if (actionsDiv) {
+                const existingEmailBtn = actionsDiv.querySelector('.email-mgr-btn');
+                const emailPreview = data.email_to_manager_preview || borrower.email_to_manager_preview;
+                const hasEmailDraft = emailPreview && Object.keys(emailPreview).length > 0;
+                if (hasEmailDraft) {
+                    if (!existingEmailBtn) {
+                        const emailBtn = document.createElement('button');
+                        emailBtn.className = 'email-mgr-btn';
+                        emailBtn.textContent = 'Email to Area Manager';
+                        emailBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            openEmailPreview(emailPreview);
+                        });
+                        actionsDiv.appendChild(emailBtn);
+                    }
+                } else if (existingEmailBtn) {
+                    existingEmailBtn.remove();
+                }
+            }
+        }
+    }
+
+    // 2. Update REPORTS and ESCALATION Tables
+    updateTableRowUI('report', borrower, data);
+    updateTableRowUI('esc', borrower, data);
+}
+
+/**
+ * Helper to update a specific table row (report or escalation)
+ */
+function updateTableRowUI(prefix, borrower, data) {
+    const tableBodyId = prefix === 'esc' ? 'escalationTableBody' : 'reportsTableBody';
+    const tableBody = document.getElementById(tableBodyId);
+    if (!tableBody) return;
+
+    let row = document.querySelector(`#${tableBodyId} tr[data-no="${borrower.NO}"]`);
+
+    // Special logic for escalation table: add row if it doesn't exist but should
+    if (prefix === 'esc' && !row) {
+        const escInfo = getEscalationInfo(borrower);
+        if (escInfo.isEscalated) {
+            // Remove the "No escalations" placeholder if it's there
+            if (tableBody.querySelectorAll('tr').length === 1 && tableBody.innerText.includes('No escalations')) {
+                tableBody.innerHTML = '';
+            }
+            row = createReportRow(borrower, 'escalation');
+            tableBody.appendChild(row);
+        }
+    }
+
+    if (!row) return;
+
+    // Payment Status
+    const paymentStatusEl = document.getElementById(`${prefix}-payment-status-${borrower.NO}`);
+    if (paymentStatusEl) {
+        const paymentConf = borrower.payment_confirmation || '-';
+        let paymentConfStyle = 'padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 13px; white-space: nowrap; display: inline-block;';
+        switch (paymentConf) {
+            case 'Paid': paymentConfStyle += 'background: #d1fae5; color: #065f46;'; break;
+            case 'Will Pay': paymentConfStyle += 'background: #dcfce7; color: #166534;'; break;
+            case 'Needs Extension': paymentConfStyle += 'background: #ffedd5; color: #9a3412;'; break;
+            case 'Dispute': paymentConfStyle += 'background: #fee2e2; color: #991b1b;'; break;
+            case 'No Response': paymentConfStyle += 'background: #f3f4f6; color: #6b7280;'; break;
+            default: paymentConfStyle += 'background: #f9fafb; color: #9ca3af; border: 1px solid #e5e7eb;';
+        }
+        paymentStatusEl.innerHTML = `<span style="${paymentConfStyle}">${paymentConf}</span>`;
+    }
+
+    // Follow Up
+    const followUpEl = document.getElementById(`${prefix}-follow-up-${borrower.NO}`);
+    if (followUpEl) {
+        followUpEl.innerHTML = renderFollowUpBadges(data.follow_up_date || borrower.follow_up_date);
+    }
+
+    // AI Summary Text
+    const summaryTextEl = document.getElementById(`${prefix}-summary-text-${borrower.NO}`);
+    if (summaryTextEl) {
+        const summary = data.ai_summary || borrower.ai_summary || 'No summary available.';
+        summaryTextEl.textContent = summary;
+        summaryTextEl.title = summary;
+    }
+
+    // Category (only for escalation table)
+    if (prefix === 'esc') {
+        const categoryEl = document.getElementById(`esc-category-${borrower.NO}`);
+        if (categoryEl) {
+            categoryEl.textContent = borrower.Payment_Category || '-';
+        }
+    }
+
+    // Action Required (Buttons)
+    const actionsEl = document.getElementById(`${prefix}-actions-${borrower.NO}`);
+    if (actionsEl) {
+        const manualBtn = actionsEl.querySelector('.report-manual-btn');
+        if (manualBtn) manualBtn.style.display = (data.require_manual_process || borrower.require_manual_process) ? 'inline-flex' : 'none';
+
+        const existingEmailBtn = actionsEl.querySelector('.report-email-btn');
+        const emailPreview = data.email_to_manager_preview || borrower.email_to_manager_preview;
+        const hasEmailDraft = emailPreview && Object.keys(emailPreview).length > 0;
+
+        if (hasEmailDraft) {
+            if (!existingEmailBtn) {
+                const emailBtn = document.createElement('button');
+                emailBtn.className = 'email-mgr-btn report-email-btn';
+                emailBtn.textContent = 'Email Manager';
+                emailBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openEmailPreview(emailPreview);
+                });
+                actionsEl.appendChild(emailBtn);
+            } else {
+                existingEmailBtn.style.display = 'inline-flex';
+            }
+        } else if (existingEmailBtn) {
+            existingEmailBtn.style.display = 'none';
+        }
+    }
+
+    // Action/Freq
+    const actionFreqEl = document.getElementById(`${prefix}-action-freq-${borrower.NO}`);
+    if (actionFreqEl) {
+        actionFreqEl.textContent = borrower.call_frequency || '-';
     }
 }
 
@@ -1235,7 +1466,7 @@ function populateReportsTable() {
     if (!currentKpiData || !currentKpiData.detailed_breakdown) {
         tableBody.innerHTML = `
             <tr>
-                <td colspan="9" style="padding: 60px; text-align: center; color: #9ca3af;">
+                <td colspan="11" style="padding: 60px; text-align: center; color: #9ca3af;">
                     <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
                     <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No data available</div>
                     <div style="font-size: 14px;">Upload a file or refresh to load borrower data</div>
@@ -1258,7 +1489,7 @@ function populateReportsTable() {
     if (allBorrowers.length === 0) {
         tableBody.innerHTML = `
             <tr>
-                <td colspan="9" style="padding: 60px; text-align: center; color: #9ca3af;">
+                <td colspan="11" style="padding: 60px; text-align: center; color: #9ca3af;">
                     <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
                     <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No borrowers found</div>
                     <div style="font-size: 14px;">Upload a file to get started</div>
@@ -1270,57 +1501,165 @@ function populateReportsTable() {
 
     // Populate table rows
     tableBody.innerHTML = '';
-    allBorrowers.forEach((borrower, index) => {
-        const row = document.createElement('tr');
-        row.style.cssText = 'border-bottom: 1px solid #e5e7eb; transition: background 0.2s;';
-        row.onmouseenter = () => row.style.background = '#f9fafb';
-        row.onmouseleave = () => row.style.background = 'transparent';
-
-        const paymentConf = borrower.payment_confirmation || '-';
-        const followUpDate = (borrower.follow_up_date || '-').replace(/, /g, ',<br>'); // Format for Multi-line if needed
-        const callFreq = borrower.call_frequency || '-';
-        const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-        const emi = (borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-
-        // Style payment confirmation based on intent
-        let paymentConfStyle = 'padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 13px; white-space: nowrap; display: inline-block;';
-
-        switch (paymentConf) {
-            case 'Paid':
-                paymentConfStyle += 'background: #d1fae5; color: #065f46;';
-                break;
-            case 'Will Pay':
-                paymentConfStyle += 'background: #dcfce7; color: #166534;';
-                break;
-            case 'Needs Extension':
-                paymentConfStyle += 'background: #ffedd5; color: #9a3412;';
-                break;
-            case 'Dispute':
-                paymentConfStyle += 'background: #fee2e2; color: #991b1b;';
-                break;
-            case 'No Response':
-                paymentConfStyle += 'background: #f3f4f6; color: #6b7280;';
-                break;
-            default:
-                paymentConfStyle += 'background: #f9fafb; color: #9ca3af; border: 1px solid #e5e7eb;';
-        }
-
-        row.innerHTML = `
-            <td style="padding: 16px; font-weight: 500;">${borrower.NO || '-'}</td>
-            <td style="padding: 16px; font-weight: 700; color: #1f2937; letter-spacing: 0.5px;">${borrower.BORROWER || '-'}</td>
-            <td style="padding: 16px; color: #059669; font-weight: 700;">₹${amount}</td>
-            <td style="padding: 16px; color: #4b5563;">${borrower.cell1 || borrower.MOBILE || '-'}</td>
-            <td style="padding: 16px; color: #374151; font-weight: 500;">₹${emi}</td>
-            <td style="padding: 16px; text-transform: capitalize; color: #4b5563;">${borrower.preferred_language || borrower.LANGUAGE || 'English'}</td>
-            <td style="padding: 16px; text-align: center;">
-                <span style="${paymentConfStyle}">${paymentConf}</span>
-            </td>
-            <td style="padding: 16px; font-weight: 600; color: #4b5563; line-height: 1.4; font-size: 13px;">${followUpDate}</td>
-            <td style="padding: 16px; font-weight: 500; color: #4b5563; font-size: 13px;">${callFreq}</td>
-        `;
-
+    allBorrowers.forEach(borrower => {
+        const row = createReportRow(borrower, 'report');
         tableBody.appendChild(row);
     });
+}
+
+/**
+ * Populate the Escalation Report table with Inconsistent and Overdue borrowers
+ */
+function populateEscalationTable() {
+    const tableBody = document.getElementById('escalationTableBody');
+
+    if (!currentKpiData || !currentKpiData.detailed_breakdown) {
+        // Default empty state is already in HTML or set here
+        return;
+    }
+
+    // Collect all borrowers and filter for escalations
+    const allBorrowers = [];
+    const byDate = currentKpiData.detailed_breakdown.by_due_date_category;
+
+    Object.values(byDate).forEach(borrowersList => {
+        if (Array.isArray(borrowersList)) {
+            allBorrowers.push(...borrowersList);
+        }
+    });
+
+    // Filter escalated borrowers
+    const escalatedBorrowers = allBorrowers.filter(isEscalation);
+
+    if (escalatedBorrowers.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="11" style="padding: 60px; text-align: center; color: #9ca3af;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🚩</div>
+                    <div style="font-size: 18px; font-weight: 500; margin-bottom: 8px;">No escalations currently</div>
+                    <div style="font-size: 14px;">Great! All borrowers are either on track or still awaiting call.</div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    // Populate table rows
+    tableBody.innerHTML = '';
+    escalatedBorrowers.forEach(borrower => {
+        const row = createReportRow(borrower, 'escalation');
+        tableBody.appendChild(row);
+    });
+}
+
+/**
+ * Helper to create a report row for either Reports or Escalation table
+ */
+function createReportRow(borrower, context = 'report') {
+    const row = document.createElement('tr');
+    row.style.cssText = 'border-bottom: 1px solid #e5e7eb; transition: background 0.2s;';
+    row.dataset.no = borrower.NO;
+    row.className = context === 'escalation' ? 'escalation-row' : 'report-row';
+    row.onmouseenter = () => row.style.background = '#f9fafb';
+    row.onmouseleave = () => row.style.background = 'transparent';
+
+    const isCalled = borrower.call_completed === true;
+    const paymentConf = isCalled ? (borrower.payment_confirmation || '-') : '-';
+    const followUpHTML = isCalled ? renderFollowUpBadges(borrower.follow_up_date) : '-';
+    const callFreq = isCalled ? (borrower.call_frequency || '-') : '-';
+    const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const emi = (borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+    // Style payment confirmation based on intent
+    let paymentConfStyle = 'padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 13px; white-space: nowrap; display: inline-block;';
+
+    switch (paymentConf) {
+        case 'Paid': paymentConfStyle += 'background: #d1fae5; color: #065f46;'; break;
+        case 'Will Pay': paymentConfStyle += 'background: #dcfce7; color: #166534;'; break;
+        case 'Needs Extension': paymentConfStyle += 'background: #ffedd5; color: #9a3412;'; break;
+        case 'Dispute': paymentConfStyle += 'background: #fee2e2; color: #991b1b;'; break;
+        case 'No Response': paymentConfStyle += 'background: #f3f4f6; color: #6b7280;'; break;
+        default: paymentConfStyle += 'background: #f9fafb; color: #9ca3af; border: 1px solid #e5e7eb;';
+    }
+
+    const summaryText = isCalled ? (borrower.ai_summary || 'No summary available.') : 'Awaiting call...';
+    const emailPreview = borrower.email_to_manager_preview;
+    const hasEmailBtn = emailPreview && Object.keys(emailPreview).length > 0;
+    const prefix = context === 'escalation' ? 'esc' : 'report';
+
+    row.innerHTML = `
+        ${context !== 'escalation' ? `
+        <td style="padding: 16px; font-weight: 500; color: #9ca3af; font-size: 12px;">${borrower.NO || '-'}</td>
+        ` : ''}
+        <td style="padding: 16px;">
+            <div class="borrower-info-cell">
+                <div class="borrower-avatar-mini">${(borrower.BORROWER || 'B').charAt(0)}</div>
+                <div style="font-weight: 700; color: #1f2937; letter-spacing: 0.3px;">${borrower.BORROWER || '-'}</div>
+            </div>
+        </td>
+        <td style="padding: 16px;">
+            <span class="pill-badge amount">₹${amount}</span>
+        </td>
+        <td style="padding: 16px; color: #64748b; font-weight: 500;">${borrower.cell1 || borrower.MOBILE || '-'}</td>
+        <td style="padding: 16px; color: #475569; font-weight: 600;">₹${emi}</td>
+        ${context !== 'escalation' ? `
+        <td style="padding: 16px;">
+            <span class="pill-badge lang">${borrower.preferred_language || borrower.LANGUAGE || 'English'}</span>
+        </td>
+        ` : ''}
+        <td style="padding: 16px; text-align: center;" id="${prefix}-payment-status-${borrower.NO}">
+            <span style="${paymentConfStyle}">${paymentConf}</span>
+        </td>
+        ${context === 'escalation' ? `
+        <td style="padding: 16px; font-weight: 700; color: #1f2937;" id="esc-category-${borrower.NO}">
+            ${borrower.Payment_Category || '-'}
+        </td>
+        ` : ''}
+        <td style="padding: 16px; font-weight: 600; color: #4b5563; line-height: 1.4; font-size: 13px;" id="${prefix}-follow-up-${borrower.NO}">${followUpHTML}</td>
+        <td class="report-summary-cell" style="padding: 16px;" id="${prefix}-summary-cell-${borrower.NO}">
+            <div class="report-summary-text" id="${prefix}-summary-text-${borrower.NO}" title="${summaryText}">${summaryText}</div>
+        </td>
+        <td style="padding: 16px; min-width: 150px;">
+            <div class="report-actions" id="${prefix}-actions-${borrower.NO}">
+                <button class="report-action-btn report-manual-btn" style="display: ${isCalled && borrower.require_manual_process ? 'inline-flex' : 'none'}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                    Manual Call
+                </button>
+                <button class="report-action-btn report-email-btn" style="display: ${isCalled && hasEmailBtn ? 'inline-flex' : 'none'}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                    Email Manager
+                </button>
+            </div>
+        </td>
+        ${context !== 'escalation' ? `
+        <td style="padding: 16px; font-weight: 500; color: #4b5563; font-size: 13px;" id="${prefix}-action-freq-${borrower.NO}">${callFreq}</td>
+        ` : ''}
+    `;
+
+    // Always attach event listeners so they work when shown dynamically later
+    const manualBtn = row.querySelector('.report-manual-btn');
+    const emailBtn = row.querySelector('.report-email-btn');
+
+    if (manualBtn) {
+        manualBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openManualCallModal(borrower);
+        });
+    }
+
+    if (emailBtn) {
+        emailBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const currentEmailPreview = borrower.email_to_manager_preview;
+            if (currentEmailPreview && Object.keys(currentEmailPreview).length > 0) {
+                openEmailPreview(currentEmailPreview);
+            } else {
+                showNotification('No email draft available for this borrower.', 'warning');
+            }
+        });
+    }
+
+    return row;
 }
 
 // Export CSV functionality
@@ -1374,7 +1713,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refreshDataBtn) {
         refreshDataBtn.addEventListener('click', async () => {
             await fetchData();
-            populateReportsTable();
+            updateDashboard(currentKpiData);
             showNotification('Data refreshed successfully!', 'success');
         });
     }
@@ -1408,3 +1747,323 @@ function getIntentColor(intent) {
         default: return '#9ca3af';
     }
 }
+/**
+ * Helper to render follow up dates as styled badges
+ */
+function renderFollowUpBadges(dateString) {
+    if (!dateString || dateString === '-') return '-';
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dates = dateString.split(',').map(d => d.trim()).filter(d => d);
+
+    if (dates.length === 0) return '-';
+
+    let html = '<div class="follow-up-badge-container">';
+    dates.forEach(date => {
+        const isToday = date === todayStr;
+        const priorityClass = isToday ? 'priority-today' : '';
+
+        // Use a simple SVG calendar icon for premium feel
+        const calendarIcon = `<svg class="calendar-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; vertical-align: middle;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
+
+        html += `<span class="follow-up-badge ${priorityClass}">${calendarIcon}${date}</span>`;
+    });
+    html += '</div>';
+
+    return html;
+}
+
+/**
+ * Common logic to check if a borrower should be in the escalation report
+ */
+/**
+ * Detects if a borrower should be escalated and returns info object
+ */
+function getEscalationInfo(borrower) {
+    if (!borrower) return { isEscalated: false, reason: '' };
+
+    // 1. Always escalate Inconsistent and Overdue (Case-insensitive)
+    const category = (borrower.Payment_Category || '').trim();
+    const lCategory = category.toLowerCase();
+
+    if (lCategory === 'inconsistent' || lCategory === 'overdue') {
+        return { isEscalated: true, reason: `Category: ${category}` };
+    }
+
+    // 2. High priority confirmations for ANY category (Case-insensitive)
+    const conf = (borrower.payment_confirmation || '').trim();
+    const lConf = conf.toLowerCase();
+
+    if (lConf === 'abusive language') return { isEscalated: true, reason: 'AI: Abusive Language' };
+    if (lConf === 'threatening language') return { isEscalated: true, reason: 'AI: Threatening Language' };
+    if (lConf === 'dispute') return { isEscalated: true, reason: 'AI: Dispute' };
+    if (lConf === 'stop calling') return { isEscalated: true, reason: 'AI: Stop Calling' };
+
+    // 3. Any manual action required (Action Required column buttons)
+    if (borrower.require_manual_process === true) {
+        return { isEscalated: true, reason: 'Manual Action required' };
+    }
+
+    return { isEscalated: false, reason: '' };
+}
+
+/**
+ * Returns true if the borrower should be in the escalation pool
+ */
+/**
+ * Returns true if the borrower should be in the escalation pool
+ */
+function isEscalation(borrower) {
+    return getEscalationInfo(borrower).isEscalated;
+}
+
+/**
+ * Open the Manual Call Modal with borrower details
+ */
+function openManualCallModal(borrower) {
+    console.log('Opening Manual Call Modal for:', borrower.BORROWER);
+    currentBorrowerId = borrower.NO;
+
+    const modal = document.getElementById('manualCallModal');
+    const detailsContainer = document.getElementById('manualCallDetails');
+    const statusZone = document.getElementById('manualCallStatus');
+    const callBtn = document.getElementById('startManualCallBtn');
+    const callBtnText = document.getElementById('callBtnText');
+    const pauseBtn = document.getElementById('pauseCallBtn');
+    const cancelBtn = document.getElementById('cancelCallBtn');
+
+    if (!modal || !detailsContainer) return;
+
+    // 1. Populate details
+    const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const emi = (borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const phone = borrower.cell1 || borrower.MOBILE || 'N/A';
+    const loanId = borrower.NO || 'N/A';
+    const category = borrower.Payment_Category || 'Normal';
+
+    detailsContainer.innerHTML = `
+        <div class="detail-item">
+            <span class="detail-label">Borrower Name</span>
+            <span class="detail-value">${borrower.BORROWER}</span>
+        </div>
+        <div class="detail-item">
+            <span class="detail-label">Phone Number</span>
+            <span class="detail-value">${phone}</span>
+        </div>
+        <div class="detail-item">
+            <span class="detail-label">Loan Amount</span>
+            <span class="detail-value">₹${amount}</span>
+        </div>
+        <div class="detail-item">
+            <span class="detail-label">EMI Amount</span>
+            <span class="detail-value">₹${emi}</span>
+        </div>
+        <div class="detail-item">
+            <span class="detail-label">Loan ID</span>
+            <span class="detail-value">#${loanId}</span>
+        </div>
+        <div class="detail-item">
+            <span class="detail-label">Payment Category</span>
+            <span class="detail-value">${category}</span>
+        </div>
+    `;
+
+    // 2. Reset Status
+    statusZone.className = 'status-indicator yet-to-call';
+    statusZone.querySelector('.status-text').textContent = 'Yet To Call';
+
+    // 3. Reset Buttons
+    callBtn.disabled = false;
+    callBtnText.textContent = 'MAKE CALL';
+    callBtn.style.opacity = '1';
+    pauseBtn.disabled = true;
+    cancelBtn.disabled = false;
+
+    // 4. Show Modal
+    modal.style.display = 'flex';
+    modal.classList.add('active');
+
+    // 5. Setup Start Button (Clone to clear old listeners)
+    const oldBtn = document.getElementById('startManualCallBtn');
+    if (oldBtn) {
+        const newBtn = oldBtn.cloneNode(true);
+        oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+        newBtn.addEventListener('click', () => {
+            initiateManualCallSimulation(borrower);
+        });
+    }
+}
+
+/**
+ * Handle the manual call initiation and simulation
+ */
+// ── ACTUAL MANUAL CALL AUDIO HANDLER ──
+let manualAudioContext = null;
+let manualWs = null;
+let manualMicStream = null;
+let manualScriptProcessor = null;
+
+async function initiateManualCallSimulation(borrower) {
+    const statusContainer = document.getElementById('manualCallStatus');
+    const statusText = statusContainer.querySelector('.status-text');
+    const makeCallBtn = document.getElementById('startManualCallBtn');
+
+    statusText.innerText = 'Connecting...';
+    statusContainer.className = 'status-indicator status-connecting';
+    makeCallBtn.disabled = true;
+
+    console.log(`☎️ Starting Manual Audio Bridge to ${borrower.BORROWER}...`);
+
+    try {
+        const phone = String(borrower.cell1 || borrower.MOBILE || '');
+        const borrowerId = String(borrower.NO || '');
+
+
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/ai_calling/make_call`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to_number: phone,
+                borrower_id: borrowerId,
+                is_manual: true,
+                use_dummy_data: false
+            })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.detail || 'Failed to initiate call');
+        }
+
+        const data = await response.json();
+        const callUuid = data.call_uuid;
+
+        statusText.innerText = 'Call in Progress (Real-time Audio)';
+        statusText.className = 'manual-call-status status-in-progress';
+
+        // Start Audio Bridge
+        await startManualAudioBridge(callUuid);
+
+    } catch (error) {
+        console.error('Manual call error:', error);
+        statusText.innerText = 'Call Failed';
+        statusText.className = 'manual-call-status status-completed';
+        makeCallBtn.disabled = false;
+        showNotification('Error starting manual call: ' + error.message, 'error');
+    }
+}
+
+async function startManualAudioBridge(callUuid) {
+    try {
+        // 1. Get Microphone
+        manualMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // 2. Initialize Audio Context
+        manualAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
+        // 3. Setup WebSocket - MUST hit port 5000 (Flask)
+        let wsHost = API_BASE_URL.replace(/http:\/\/|https:\/\//, '');
+        // If we're hitting local FastAPI (8000), switch to local Flask (5000) for WebSockets
+        if (wsHost.includes('127.0.0.1:8000') || wsHost.includes('localhost:8000')) {
+            wsHost = wsHost.replace(':8000', ':5000');
+        }
+
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        console.log(`[WS] Connecting to Manual Bridge: ${wsProtocol}//${wsHost}/agent-socket/${callUuid}`);
+        manualWs = new WebSocket(`${wsProtocol}//${wsHost}/agent-socket/${callUuid}`);
+        manualWs.binaryType = 'arraybuffer';
+
+        manualWs.onopen = () => {
+            console.log('[WS] Manual session connected');
+
+            // Start streaming mic
+            const source = manualAudioContext.createMediaStreamSource(manualMicStream);
+            manualScriptProcessor = manualAudioContext.createScriptProcessor(4096, 1, 1);
+
+            manualScriptProcessor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcmBuffer = new ArrayBuffer(inputData.length * 2);
+                const view = new DataView(pcmBuffer);
+
+                for (let i = 0; i < inputData.length; i++) {
+                    let s = Math.max(-1, Math.min(1, inputData[i]));
+                    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                }
+
+                if (manualWs.readyState === WebSocket.OPEN) {
+                    manualWs.send(pcmBuffer);
+                }
+            };
+
+            source.connect(manualScriptProcessor);
+            manualScriptProcessor.connect(manualAudioContext.destination);
+        };
+
+        manualWs.onmessage = (e) => {
+            if (typeof e.data === 'string') return;
+
+            // Play received audio
+            const pcm16 = new Int16Array(e.data);
+            const float32 = new Float32Array(pcm16.length);
+            for (let i = 0; i < pcm16.length; i++) {
+                float32[i] = pcm16[i] / 32768.0;
+            }
+
+            const buffer = manualAudioContext.createBuffer(1, float32.length, 16000);
+            buffer.getChannelData(0).set(float32);
+
+            const source = manualAudioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(manualAudioContext.destination);
+            source.start();
+        };
+
+        manualWs.onclose = () => {
+            console.log('[WS] Manual session closed');
+            stopManualAudioBridge();
+        };
+
+    } catch (err) {
+        console.error('Audio Bridge Error:', err);
+        showNotification('Microphone access required for manual call.', 'error');
+        stopManualAudioBridge();
+    }
+}
+
+function stopManualAudioBridge() {
+    console.log('[AUDIO] Stopping bridge and cleanup...');
+    if (manualWs) {
+        manualWs.close();
+        manualWs = null;
+    }
+    if (manualMicStream) {
+        manualMicStream.getTracks().forEach(track => track.stop());
+        manualMicStream = null;
+    }
+    if (manualScriptProcessor) {
+        manualScriptProcessor.disconnect();
+        manualScriptProcessor = null;
+    }
+    if (manualAudioContext) {
+        if (manualAudioContext.state !== 'closed') {
+            manualAudioContext.close();
+        }
+        manualAudioContext = null;
+    }
+
+    const statusContainer = document.getElementById('manualCallStatus');
+    if (statusContainer) {
+        const statusText = statusContainer.querySelector('.status-text');
+        if (statusText) statusText.innerText = 'Call Ended';
+        statusContainer.className = 'status-indicator completed';
+    }
+
+    const makeCallBtn = document.getElementById('startManualCallBtn');
+    if (makeCallBtn) {
+        makeCallBtn.disabled = false;
+        const btnText = document.getElementById('callBtnText');
+        if (btnText) btnText.textContent = 'MAKE CALL';
+    }
+}
+
+// Remove the redundant listener at the bottom

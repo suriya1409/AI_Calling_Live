@@ -21,6 +21,8 @@ from config import settings
 from app.auth.utils import get_current_user
 from app.data_ingestion.utils import sanitize_for_json
 from database import db_manager
+from app.utils.email_service import send_email
+
 
 # Import standalone model functions
 from app.table_models.borrowers_table import (
@@ -89,7 +91,7 @@ class BorrowerInfo(BaseModel):
     NO: str
     cell1: str
     preferred_language: str = "en-IN"
-    intent_for_testing: Optional[str] = Field(None, description="Intent for dummy call testing: normal, abusive, threatening, stop_calling")
+    intent_for_testing: Optional[str] = Field(None, description="Intent for dummy call testing: normal, abusive, threatening, stop_calling, language_switch")
 
 class BulkCallRequest(BaseModel):
     borrowers: List[BorrowerInfo]
@@ -101,7 +103,8 @@ class SingleCallRequest(BaseModel):
     language: str = "en-IN"
     borrower_id: Optional[str] = None
     use_dummy_data: bool = True
-    intent_for_testing: Optional[str] = Field(None, description="Intent for dummy call testing: normal, abusive, threatening, stop_calling")
+    is_manual: bool = False
+    intent_for_testing: Optional[str] = Field(None, description="Intent for dummy call testing: normal, abusive, threatening, stop_calling, language_switch")
 
 class CallResponse(BaseModel):
     success: bool
@@ -112,6 +115,7 @@ class CallResponse(BaseModel):
     borrower_id: Optional[str] = None
     error: Optional[str] = None
     is_dummy: bool = False
+    is_manual: bool = False
     ai_analysis: Optional[dict] = None
     conversation: Optional[List[dict]] = None
     mid_call: bool = False
@@ -121,6 +125,13 @@ class CallResponse(BaseModel):
     payment_confirmation: Optional[str] = None
     follow_up_date: Optional[str] = None
     call_frequency: Optional[str] = None
+
+class EmailRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+    borrower_id: Optional[str] = None
+
 
 class BulkCallResponse(BaseModel):
     total_requests: int
@@ -335,6 +346,35 @@ DUMMY_CONVERSATIONS = {
             {"speaker": "User", "text": "ஆம், கேட்கிறது ஆனால் நான் இப்போது ஒரு கூட்டத்தில் இருக்கிறேன், நான்— [அழைப்பு துண்டிக்கப்பட்டது]"}
         ]
     },
+    "language_switch": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hi Mr Rajesh, hope you are doing well today. We are calling from the Loan sector, this is a general check-up call regarding the Loan amount that you have borrowed. Your due date is coming up soon on March 5th 2026. Can you please let us know if you will be paying the balance amount before the due date?"},
+            {"speaker": "User", "text": "Yes, I will pay before the due date."},
+            {"speaker": "AI", "text": "Good to know sir, we will update our records accordingly. Do you have any questions for us?"},
+            {"speaker": "User", "text": "हां, कृपया बताइए कि मेरी वर्तमान लोन बकाया राशि कितनी है?", "language_switch": "hi-IN"},
+            {"speaker": "AI", "text": "जी श्रीमान, आपकी वर्तमान कुल बकाया लोन राशि ₹50,000 है और इस महीने के भुगतान के बाद आपकी बकाया राशि ₹45,000 होगी।"},
+            {"speaker": "User", "text": "Thank you for the information.", "language_switch": "en-IN"},
+            {"speaker": "AI", "text": "Thank you sir, have a good day!"}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, आशा है आप अच्छे हैं। हम लोन सेक्टर से कॉल कर रहे हैं, यह आपके उधार लिए गए लोन के बारे में एक सामान्य फॉलो-अप कॉल है। आपकी ड्यू डेट जल्द आ रही है 5 मार्च 2026। क्या आप ड्यू डेट से पहले बकाया राशि का भुगतान कर देंगे?"},
+            {"speaker": "User", "text": "हां, मैं ड्यू डेट से पहले भुगतान कर दूंगा।"},
+            {"speaker": "AI", "text": "यह सुनकर अच्छा लगा श्रीमान, हम अपने रिकॉर्ड अपडेट कर देंगे। क्या आपका कोई सवाल है?"},
+            {"speaker": "User", "text": "Yes, could you please tell me what my current loan due amount is?", "language_switch": "en-IN"},
+            {"speaker": "AI", "text": "Sure sir, your current outstanding loan amount is ₹50,000 and after payment of the due this month your loan amount would be ₹45,000."},
+            {"speaker": "User", "text": "जानकारी के लिए धन्यवाद।", "language_switch": "hi-IN"},
+            {"speaker": "AI", "text": "धन्यवाद श्रीमान, आपका दिन शुभ हो!"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடன் பிரிவிலிருந்து அழைக்கிறோம், நீங்கள் பெற்ற கடன் தொகை குறித்த வழக்கமான பின்தொடர் அழைப்பு. உங்கள் செலுத்த வேண்டிய தேதி விரைவில் வரவிருக்கிறது மார்ச் 5, 2026. நிலுவைத் தொகையை ட்யூ டேட்-க்கு முன் செலுத்துவீர்களா?"},
+            {"speaker": "User", "text": "ஆமாம், நான் ட்யூ டேட்-க்கு முன் தொகையை செலுத்துவேன்."},
+            {"speaker": "AI", "text": "நல்லது ஐயா, நாங்கள் எங்கள் பதிவுகளை அதற்கேற்ப புதுப்பிப்போம். உங்களுக்கு ஏதாவது கேள்விகள் உள்ளதா?"},
+            {"speaker": "User", "text": "Yes, could you please tell me what my current loan balance is?", "language_switch": "en-IN"},
+            {"speaker": "AI", "text": "Sure sir, your current outstanding loan amount is ₹50,000 and after this month's payment your loan balance would be ₹45,000."},
+            {"speaker": "User", "text": "தகவலுக்கு நன்றி.", "language_switch": "ta-IN"},
+            {"speaker": "AI", "text": "நன்றி ஐயா, நல்ல நாள் வாழ்த்துகள்!"}
+        ]
+    },
     "failed_pickup": {
         "en-IN": [],
         "hi-IN": [],
@@ -377,11 +417,17 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
         
         for entry in template:
             current_time += timedelta(seconds=random.uniform(2, 5))
+            # Track language switches in the conversation
+            entry_lang = entry.get("language_switch", lang_key)
             conversation.append({
-                **entry,
+                "speaker": entry["speaker"],
+                "text": entry["text"],
                 "timestamp": current_time.isoformat(),
-                "language": lang_key
+                "language": entry_lang
             })
+            # If this entry has a language_switch marker, update lang_key for subsequent AI entries
+            if "language_switch" in entry:
+                lang_key = entry["language_switch"]
             
         # Use semaphore to limit global concurrent AI requests
         async with ai_semaphore:
@@ -624,10 +670,11 @@ async def make_single_call(request: SingleCallRequest, current_user: dict = Depe
     """Trigger a single call manually for current user"""
     user_id = str(current_user["_id"])
     lang = normalize_language(request.language)
-    if request.use_dummy_data:
+    if request.use_dummy_data and not request.is_manual:
         res = await create_dummy_call(user_id, request.to_number, lang, request.borrower_id, request.intent_for_testing)
     else:
-        res = make_outbound_call(user_id, request.to_number, lang, request.borrower_id)
+        # If it's manual OR use_dummy_data=False, trigger a real call
+        res = make_outbound_call(user_id, request.to_number, lang, request.borrower_id, is_manual=request.is_manual)
         
     if res.get("success"):
         return CallResponse(
@@ -637,7 +684,8 @@ async def make_single_call(request: SingleCallRequest, current_user: dict = Depe
             to_number=request.to_number,
             language=lang,
             borrower_id=request.borrower_id,
-            is_dummy=request.use_dummy_data,
+            is_dummy=request.use_dummy_data and not request.is_manual,
+            is_manual=res.get("is_manual", False),
             ai_analysis=res.get("ai_analysis"),
             conversation=res.get("conversation")
         )
@@ -698,6 +746,15 @@ async def get_borrower_call_status(borrower_no: str, current_user: dict = Depend
         "require_manual_process": borrower.get("require_manual_process", False),
         "email_to_manager_preview": borrower.get("email_to_manager_preview"),
     }
+
+@router.post("/send_escalation_email")
+async def send_escalation_email(request: EmailRequest, current_user: dict = Depends(get_current_user)):
+    """Send an escalation email to the area manager"""
+    success = await send_email(request.to, request.subject, request.body)
+    if success:
+        return {"status": "success", "message": "Email sent successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to send email. Check server logs for details.")
 
 @router.get("/health")
 async def health_check():

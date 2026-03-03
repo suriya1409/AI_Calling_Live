@@ -573,11 +573,166 @@ def synthesize_sarvam(text, language="en-IN", max_retries=2):
 # ============================================================
 
 def detect_language(text):
-    """Simple language detection based on character sets"""
+    """Detect language based on Unicode character sets AND Hinglish keyword detection.
+    Returns the detected language code.
+    
+    Key improvement: Detects Hinglish (Hindi spoken in Latin characters) by checking
+    for common Hindi words written in English script. This is critical because Sarvam STT
+    sometimes transcribes Hindi speech using Latin characters when given an English hint.
+    """
     text = text.strip()
-    if re.search(r'[\u0900-\u097F]', text): return "hi-IN"
-    if re.search(r'[\u0B80-\u0BFF]', text): return "ta-IN"
+    if not text:
+        return "en-IN"
+    
+    # Count characters belonging to each script
+    hindi_chars = len(re.findall(r'[\u0900-\u097F]', text))
+    tamil_chars = len(re.findall(r'[\u0B80-\u0BFF]', text))
+    latin_chars = len(re.findall(r'[a-zA-Z]', text))
+    total_alpha = hindi_chars + tamil_chars + latin_chars
+    
+    if total_alpha == 0:
+        return "en-IN"
+    
+    # Use proportional detection - whichever script dominates
+    if hindi_chars / total_alpha > 0.3:
+        return "hi-IN"
+    if tamil_chars / total_alpha > 0.3:
+        return "ta-IN"
+    
+    # ── HINGLISH DETECTION ──
+    # If the text is mostly Latin characters, check for common Hindi words
+    # written in English script (Hinglish). This catches cases where STT
+    # transcribes Hindi speech into Latin characters.
+    if latin_chars > 0 and hindi_chars == 0 and tamil_chars == 0:
+        text_lower = text.lower()
+        words = set(text_lower.split())
+        
+        # Common Hindi words/phrases that appear in Hinglish transcription
+        hinglish_markers = {
+            # Affirmatives / negatives
+            'haan', 'haa', 'nahi', 'nhi', 'nahin', 'ji', 'accha', 'acha', 'theek',
+            'thik', 'bilkul', 'zaroor', 'jaroor',
+            # Pronouns / common words
+            'mera', 'meri', 'mere', 'mujhe', 'humara', 'hamara', 'aapka', 'aapki',
+            'yeh', 'woh', 'kya', 'kaise', 'kab', 'kahan', 'kyun', 'kaun',
+            # Financial / loan context
+            'paisa', 'paise', 'rupaye', 'rupay', 'bhugtan', 'bhugtaan', 'karz',
+            'karj', 'kist', 'kisht', 'rashi', 'raashi', 'bakaya', 'jama',
+            # Time words
+            'kal', 'aaj', 'parso', 'abhi', 'baad', 'pehle', 'mahina', 'hafte',
+            'hafta',
+            # Verbs / actions
+            'karunga', 'karenge', 'karungi', 'dunga', 'dungi', 'denge', 'batao',
+            'bataiye', 'bataye', 'suniye', 'boliye', 'bolo', 'kar', 'karo',
+            'de', 'do', 'lo', 'lena', 'dena', 'milega', 'hoga', 'hogi',
+            # Greetings / politeness
+            'namaste', 'namaskar', 'dhanyavaad', 'dhanyawad', 'shukriya',
+            'alvida', 'kripya', 'sahab', 'saab', 'madam', 'bhai',
+            # Common fillers
+            'are', 'yaar', 'bas', 'toh', 'bhi', 'hai', 'hain', 'tha',
+            'wala', 'wali', 'wale', 'se', 'ka', 'ki', 'ke', 'ko', 'ne',
+            'par', 'pe', 'mein', 'tak', 'aur',
+        }
+        
+        # Count how many words match Hinglish markers
+        hinglish_matches = words.intersection(hinglish_markers)
+        match_ratio = len(hinglish_matches) / len(words) if words else 0
+        
+        # If 30%+ of words are Hinglish markers, classify as Hindi
+        if match_ratio >= 0.3 or len(hinglish_matches) >= 3:
+            print(f"[LANG] 🔍 Hinglish detected! Matched words: {hinglish_matches} ({match_ratio:.0%})")
+            return "hi-IN"
+    
     return "en-IN"
+
+
+def detect_language_from_stt(audio_data, preferred_language, alternate_language=None):
+    """Try transcribing audio in multiple languages and pick the best match.
+    
+    UPDATED LOGIC:
+    1. Transcribe in all 3 supported languages (en-IN, hi-IN, ta-IN).
+    2. Check if the borrower is speaking in the preferred language.
+       If Preferred STT matches its script, we stick to it and continue.
+    3. Else, if the language changed, compare scores of other languages
+       to the preferred language and switch only if another language's 
+       confidence score is clearly higher.
+    """
+    ALL_SUPPORTED_LANGUAGES = ["en-IN", "hi-IN", "ta-IN"]
+    
+    # 1. Transcribe in all supported languages to probe for switches
+    transcripts = {}
+    for lang in ALL_SUPPORTED_LANGUAGES:
+        t = transcribe_sarvam(audio_data, lang)
+        if t and t.strip():
+            transcripts[lang] = t.strip()
+            print(f"[STT-PROBE] {lang}: '{t.strip()[:60]}'")
+    
+    if not transcripts:
+        return None, preferred_language
+
+    # 2. Calculate confidence scores for each transcription
+    # Heuristic: Score = (3 if script matches hint else 0) + (length / 200)
+    scores = {}
+    for lang, transcript in transcripts.items():
+        detected_script = detect_language(transcript)
+        
+        # Base score: does the language hint match the character script detected?
+        # This is our primary 'confidence' indicator.
+        base_score = 3.0 if detected_script == lang else 0.0
+        
+        # Bonus for longer transcripts (more confident STT capture)
+        length_bonus = len(transcript) / 200.0
+        
+        score = base_score + length_bonus
+        scores[lang] = score
+        print(f"[STT-SCORE] {lang}: script_detected={detected_script}, score={score:.2f}, len={len(transcript)}")
+
+    # 3. ── NEW LOGIC: PREFERRED LANGUAGE FIRST ──
+    # Instruction: "if the borrower is speaking in the preffered language then continue with the flow"
+    pref_transcript = transcripts.get(preferred_language)
+    if pref_transcript:
+        pref_detected_script = detect_language(pref_transcript)
+        # If the preferred language transcription matches its script, it's a valid capture.
+        # We stick to it unless it's extremely short/meaningless.
+        if pref_detected_script == preferred_language and len(pref_transcript) >= 3:
+            print(f"[LANG-STICKY] Borrower is speaking Preferred Language ({preferred_language}). Continuing flow...")
+            return pref_transcript, preferred_language
+
+    # 4. ── ELSE: DETECT LANGUAGE SWITCH ──
+    # Instruction: "compare the confidence score of the current language to the preffered language 
+    # and if the current language score is not equal to the preferred language then change"
+    
+    best_lang = preferred_language
+    best_score = scores.get(preferred_language, 0)
+    
+    # Iterate through other languages to see if user switched
+    for lang in ALL_SUPPORTED_LANGUAGES:
+        if lang == preferred_language: continue
+        
+        current_score = scores.get(lang, 0)
+        
+        # We switch if the current language score is higher than the preferred score.
+        # We add a small buffer (0.2) to prevent switching on tiny differences/noise.
+        if current_score > (best_score + 0.2):
+            best_score = current_score
+            best_lang = lang
+    
+    # If we decided to switch
+    if best_lang != preferred_language:
+        print(f"[LANG-SWITCH] Switch detected: {preferred_language} (score {scores.get(preferred_language, 0):.2f}) -> {best_lang} (score {best_score:.2f})")
+    
+    # 5. One more check for Hinglish if the system stayed in English but it looks like Hindi
+    if best_lang == preferred_language and preferred_language == "en-IN":
+        pref_transcript = transcripts.get("en-IN", "")
+        if detect_language(pref_transcript) == "hi-IN":
+            # Hinglish detected in English STT - switch to hi-IN result if available
+            if "hi-IN" in transcripts:
+                print(f"[LANG-HINGLISH] Hinglish detected, using hi-IN transcript instead of en-IN")
+                return transcripts["hi-IN"], "hi-IN"
+            else:
+                return pref_transcript, "hi-IN"
+
+    return transcripts.get(best_lang, pref_transcript), best_lang
 
 
 # ============================================================
@@ -795,7 +950,33 @@ def generate_ai_response(user_text, language="en-IN", context=None):
     }
     
     system_prompt = sys_prompts.get(language, sys_prompts['en-IN'])
-    user_message = f"Conversation so far:\n{conv_history}\n\nUser just said: {user_text}\n\nRespond with 1-2 short sentences following the conversation flow above."
+    
+    # ── DYNAMIC LANGUAGE SWITCHING: Force system prompt to match current language ──
+    lang_switch_note = ""
+    if context and context.get("language_switched"):
+        prev_lang_name = settings.LANGUAGE_CONFIG.get(context.get("previous_language", ""), {}).get('name', 'unknown')
+        curr_lang_name = settings.LANGUAGE_CONFIG.get(language, {}).get('name', language)
+        
+        # CRITICAL: Override the system prompt to the NEW language's prompt
+        # This ensures the AI's persona, rules, and conversation flow are all in the new language
+        system_prompt = sys_prompts.get(language, sys_prompts['en-IN'])
+        
+        # Add a forceful language override at the TOP of the system prompt
+        language_override = (
+            f"🚨 CRITICAL LANGUAGE OVERRIDE 🚨\n"
+            f"The user has SWITCHED from {prev_lang_name} to {curr_lang_name}.\n"
+            f"You MUST respond ENTIRELY in {curr_lang_name}. Do NOT use {prev_lang_name} at all.\n"
+            f"Continue the conversation naturally in {curr_lang_name} without commenting on the language change.\n\n"
+        )
+        system_prompt = language_override + system_prompt
+        
+        lang_switch_note = (
+            f"\n\n⚠️ LANGUAGE SWITCH DETECTED: The user switched from {prev_lang_name} to {curr_lang_name}. "
+            f"You MUST respond ONLY in {curr_lang_name} now."
+        )
+        print(f"[AI RESPONSE] 🌐 Language switch active: {prev_lang_name} → {curr_lang_name}, using {language} system prompt")
+    
+    user_message = f"Conversation so far:\n{conv_history}\n\nUser just said: {user_text}{lang_switch_note}\n\nRespond with 1-2 short sentences following the conversation flow above."
     
     # PRIMARY: Use sync Groq client (fast, no async issues in Flask)
     if sync_groq_client:
@@ -836,7 +1017,14 @@ def generate_ai_response(user_text, language="en-IN", context=None):
 # ============================================================
 
 class ConversationHandler:
-    """Manages conversation state and transcript with USER ISOLATION"""
+    """Manages conversation state and transcript with USER ISOLATION.
+    
+    Dynamic Multilingual Switching:
+    - Tracks the user's preferred_language (set at call start)
+    - Detects the first non-preferred language the user speaks → becomes alternate_language
+    - Only switches between these 2 languages dynamically during the call
+    - AI responds in whichever language the user is currently speaking
+    """
     
     def __init__(self, call_uuid, user_id=None, preferred_language="en-IN", borrower_id=None):
         self.call_uuid = call_uuid
@@ -848,7 +1036,10 @@ class ConversationHandler:
         self.start_time = datetime.now()
         self.preferred_language = preferred_language
         self.current_language = preferred_language
+        # Dynamic multilingual switching: track alternate language
+        self.alternate_language = None  # First non-preferred language detected
         self.language_history = []
+        self.language_switch_count = 0
         
     def add_entry(self, speaker, text):
         entry = {
@@ -859,16 +1050,45 @@ class ConversationHandler:
         }
         self.conversation.append(entry)
         self.context["conversation"] = self.conversation
-        print(f"[CONV] [{self.user_id}] [{speaker}] {text}")
+        print(f"[CONV] [{self.user_id}] [{speaker}] ({self.current_language}) {text}")
+    
+    def handle_language_switch(self, detected_language):
+        """Handle dynamic language switching between any of the supported languages.
+        
+        Updated Logic (Multilingual Support):
+        - Any detected switch between en-IN, hi-IN, and ta-IN is allowed.
+        - The AI will adapt its system prompt and output to the new detected language.
+        """
+        if detected_language == self.current_language:
+            return False  # No change
+        
+        # Allow any of the 3 supported languages
+        ALL_SUPPORTED = ["en-IN", "hi-IN", "ta-IN"]
+        if detected_language not in ALL_SUPPORTED:
+            return False
+
+        old_lang = self.current_language
+        self.current_language = detected_language
+        self.language_switch_count += 1
+        
+        # Track alternate language (first switch from preferred)
+        if not self.alternate_language and detected_language != self.preferred_language:
+            self.alternate_language = detected_language
+
+        self.language_history.append({
+            "from": old_lang,
+            "to": detected_language,
+            "timestamp": datetime.now().isoformat(),
+            "switch_number": self.language_switch_count
+        })
+        
+        lang_name = settings.LANGUAGE_CONFIG.get(detected_language, {}).get('name', detected_language)
+        print(f"[LANG SWITCH] 🔄 #{self.language_switch_count} Switch detected: {old_lang} → {detected_language} ({lang_name})")
+        return True
     
     def update_language(self, detected_language):
-        if detected_language != self.current_language:
-            self.language_history.append({
-                "from": self.current_language,
-                "to": detected_language,
-                "timestamp": datetime.now().isoformat()
-            })
-            self.current_language = detected_language
+        """Legacy method - delegates to handle_language_switch for backward compatibility"""
+        return self.handle_language_switch(detected_language)
     
     async def save_transcript(self):
         """Save transcript using standalone model functions with User Isolation"""
@@ -889,7 +1109,10 @@ class ConversationHandler:
             "end_time": datetime.now().isoformat(),
             "duration_seconds": round(duration, 2),
             "preferred_language": self.preferred_language,
+            "alternate_language": self.alternate_language,
             "final_language": self.current_language,
+            "language_switches": self.language_history,
+            "language_switch_count": self.language_switch_count,
             "conversation": self.conversation,
             "ai_analysis": ai_analysis
         }
@@ -945,7 +1168,7 @@ class ConversationHandler:
 # CALL MANAGEMENT
 # ============================================================
 
-def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
+def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None, is_manual=False):
     """Trigger an isolated outbound call passing user_id to webhooks"""
     if not voice:
         return {"success": False, "error": "Vonage client not initialized"}
@@ -955,24 +1178,25 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
     if to_number.startswith('+'): to_number = to_number[1:]
     
     # Auto-prepend 91 (India) country code for 10-digit Indian mobile numbers
-    # Indian mobile numbers start with 6, 7, 8, or 9
     if len(to_number) == 10 and to_number[0] in '6789':
         to_number = '91' + to_number
         print(f"[VONAGE] 📱 Auto-prepended country code: 91 → {to_number}")
     
     try:
-        # Include user_id in answer URL for isolation in the webhook handler
+        # Include user_id and is_manual in answer URL
         answer_url = f'{settings.BASE_URL}/webhooks/answer?preferred_language={language}&user_id={user_id}'
         if borrower_id:
             answer_url += f'&borrower_id={borrower_id}'
+        if is_manual:
+            answer_url += f'&is_manual=true'
         
-        print(f"\n[VONAGE] 📞 Making outbound call:")
+        print(f"\n[VONAGE] 📞 Making {'MANUAL' if is_manual else 'AI'} outbound call:")
         print(f"  To: {to_number}")
         print(f"  From: {settings.VONAGE_FROM_NUMBER}")
         print(f"  Language: {language}")
         print(f"  Borrower: {borrower_id}")
+        print(f"  Manual: {is_manual}")
         print(f"  Answer URL: {answer_url}")
-        print(f"  Event URL: {settings.BASE_URL}/webhooks/event")
         
         response = voice.create_call({
             'to': [{'type': 'phone', 'number': to_number}],
@@ -987,7 +1211,8 @@ def make_outbound_call(user_id, to_number, language="en-IN", borrower_id=None):
             "success": True,
             "call_uuid": response.uuid,
             "status": "initiated",
-            "user_id": user_id
+            "user_id": user_id,
+            "is_manual": is_manual
         }
         
     except Exception as e:
