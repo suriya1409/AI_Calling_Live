@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Test - AI Finance Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #1f2937;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status-card {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-label {
+            color: #4b5563;
+            font-weight: 500;
+        }
+
+        .status-value {
+            color: #1f2937;
+            font-weight: 600;
+        }
+
+        .status-value.success {
+            color: #10b981;
+        }
+
+        .status-value.error {
+            color: #ef4444;
+        }
+
+        .status-value.pending {
+            color: #f59e0b;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn.secondary {
+            background: #6b7280;
+        }
+
+        .btn.secondary:hover {
+            box-shadow: 0 10px 20px rgba(107, 114, 128, 0.4);
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .info-box h3 {
+            color: #1e40af;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .info-box p {
+            color: #1e3a8a;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🚀 Frontend Test Page</h1>
+        <p class="subtitle">AI Finance Platform - Connection Test</p>
+
+        <div class="status-card">
+            <div class="status-item">
+                <span class="status-label">Backend API</span>
+                <span class="status-value pending" id="apiStatus">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Frontend Server</span>
+                <span class="status-value success">Running</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">API Base URL</span>
+                <span class="status-value" id="apiUrl">http://127.0.0.1:8000</span>
+            </div>
+        </div>
+
+        <button class="btn" onclick="testConnection()">
+            <span id="testBtnText">Test Connection</span>
+        </button>
+
+        <button class="btn secondary" onclick="window.location.href='index.html'">
+            Open Dashboard
+        </button>
+
+        <div class="info-box">
+            <h3>📋 Quick Start Guide</h3>
+            <p>
+                1. Ensure the backend server is running on port 8000<br>
+                2. Click "Test Connection" to verify API connectivity<br>
+                3. Click "Open Dashboard" to access the main application<br>
+                4. Register a new account or login with existing credentials
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://127.0.0.1:8000';
+
+        async function testConnection() {
+            const statusEl = document.getElementById('apiStatus');
+            const btnText = document.getElementById('testBtnText');
+
+            statusEl.innerHTML = '<span class="loading"></span>';
+            btnText.textContent = 'Testing...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    statusEl.textContent = '✓ Connected';
+                    statusEl.className = 'status-value success';
+                    console.log('Backend health check:', data);
+
+                    setTimeout(() => {
+                        alert('✅ Connection successful!\n\nBackend is running and accessible.\n\nYou can now use the dashboard.');
+                    }, 300);
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                statusEl.textContent = '✗ Failed';
+                statusEl.className = 'status-value error';
+                console.error('Connection test failed:', error);
+
+                setTimeout(() => {
+                    alert('❌ Connection failed!\n\nPlease ensure:\n1. Backend server is running\n2. Server is accessible at ' + API_BASE_URL + '\n3. CORS is properly configured\n\nError: ' + error.message);
+                }, 300);
+            } finally {
+                btnText.textContent = 'Test Connection';
+            }
+        }
+
+        // Auto-test on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(testConnection, 500);
+        });
+    </script>
+</body>
+
+</html>
