@@ -82,15 +82,33 @@ async def unified_data_endpoint(
             if file.filename.endswith('.csv'):
                 df = pd.read_csv(io.BytesIO(contents))
             else:
-                df = pd.read_excel(io.BytesIO(contents), engine='openpyxl')
+                # Let pandas handle the extension (openpyxl for .xlsx, xlrd for .xls)
+                df = pd.read_excel(io.BytesIO(contents))
             
             # Normalize and Optimize
             df = normalize_column_names(df)
             df = optimize_dataframe(df)
             
+            # ✅ Ensure a 'NO' column exists (used as the unique key for upsert)
+            # If the Excel uses 'contnr' or 'account' as primary ID, map it to 'NO'
+            if 'NO' not in df.columns:
+                if 'contnr' in df.columns:
+                    df['NO'] = df['contnr']
+                    logger.info("Mapped 'contnr' → 'NO' as primary key")
+                elif 'account' in df.columns:
+                    df['NO'] = df['account']
+                    logger.info("Mapped 'account' → 'NO' as primary key")
+                else:
+                    # Last resort: use row index as ID
+                    df['NO'] = df.reset_index().index.astype(str)
+                    logger.info("Generated row-index as 'NO' primary key")
+            
             # Apply standard categorizations
             df['Payment_Category'] = df.apply(categorize_customer, axis=1)
             df['Due_Date_Category'] = df.apply(categorize_by_due_date, axis=1)
+            
+            logger.info(f"Sample acstatus values: {df['acstatus'].unique()[:5].tolist() if 'acstatus' in df.columns else 'NO acstatus column'}")
+            logger.info(f"Sample Payment_Category: {df['Payment_Category'].value_counts().to_dict()}")
             
             # Handle NaT/NaN for MongoDB
             df = df.replace({pd.NA: None, pd.NaT: None})
@@ -98,6 +116,11 @@ async def unified_data_endpoint(
             
             # Convert to records
             records = df.to_dict('records')
+            
+            # ✅ DELETE all old borrowers for this user before inserting fresh dataset
+            # This ensures a full replace (not a merge) on every upload
+            await delete_all_borrowers(user_id)
+            logger.info(f"Cleared old borrowers for user {user_id} before fresh insert")
             
             # Persist in MongoDB with User Isolation
             await bulk_upsert_borrowers(user_id, records)
@@ -116,25 +139,27 @@ async def unified_data_endpoint(
     # Calculate KPIs and Breakdown
     total_arrears = 0
     by_category = {
-        "More_than_7_days": [],
-        "1-7_days": [],
-        "Today": []
+        "SMA0": [],
+        "SMA1": [],
+        "SMA2": [],
+        "SMA3": [],
+        "NPA": []
     }
     
     for b in borrowers:
-        # Calculate total arrears
-        amount = b.get("AMOUNT", 0)
+        # Calculate total arrears using 'amtfin' as requested
+        amount = b.get("amtfin", b.get("AMOUNT", 0))
         if amount is not None:
             try:
                 total_arrears += float(amount)
             except: pass
         
-        # Group by due date category
-        due_cat = b.get("Due_Date_Category", "Today")
-        if due_cat in by_category:
-            by_category[due_cat].append(b)
+        # Group by Payment_Category (which now holds SMA/NPA status)
+        category = b.get("Payment_Category", "SMA0")
+        if category in by_category:
+            by_category[category].append(b)
         else:
-            by_category["Today"].append(b) # Default fallback
+            by_category["SMA0"].append(b) # Default fallback
             
     response_data = {
         "status": "success",
@@ -143,7 +168,7 @@ async def unified_data_endpoint(
             "total_arrears": round(total_arrears, 2)
         },
         "detailed_breakdown": {
-            "by_due_date_category": by_category
+            "by_sma_category": by_category
         },
         "uploaded": file is not None,
         "processing_time": round(time.time() - start_time, 2)

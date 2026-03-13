@@ -3,34 +3,24 @@ from datetime import datetime, timedelta
 
 def categorize_customer(row):
     """
-    Categorize customer based on payment history.
-    Returns: Consistent, Inconsistent, or Overdue
+    Categorize customer based on acstatus from Excel.
+    Returns: SMA0, SMA1, SMA2, SMA3, or NPA
     """
-    # Define payment month columns
-    due_months = ['DUE_MONTH_2', 'DUE_MONTH_3', 'DUE_MONTH_4', 'DUE_MONTH_5', 'DUE_MONTH_6']
+    acstatus = str(row.get('acstatus', '')).upper().strip()
     
-    # Count paid months
-    paid_months = sum(1 for month in due_months if pd.notna(row.get(month)) and str(row.get(month)).strip())
-    
-    # Calculate missed months
-    missed_months = 5 - paid_months
-    
-    # Get status
-    status = str(row.get('STATUS', '')).upper().strip()
-    
-    # Apply categorization rules (ORDER MATTERS!)
-    # Check Overdue first (NPA with low payments)
-    if paid_months <= 3 and status == 'NPA':
-        return 'Overdue'
-    # Then check Inconsistent (missed many payments)
-    elif missed_months >= 2:
-        return 'Inconsistent'
-    # Then check Consistent (good payment history with STD status)
-    elif missed_months < 2 and status == 'STD':
-        return 'Consistent'
+    if 'SMA0' in acstatus:
+        return 'SMA0'
+    elif 'SMA1' in acstatus:
+        return 'SMA1'
+    elif 'SMA2' in acstatus:
+        return 'SMA2'
+    elif 'SMA3' in acstatus:
+        return 'SMA3'
+    elif 'NPA' in acstatus:
+        return 'NPA'
     else:
-        # Default to Inconsistent if doesn't match other rules
-        return 'Inconsistent'
+        # Default fallback or try to infer from other statuses if needed
+        return 'SMA0'
 
 
 def categorize_by_due_date(row):
