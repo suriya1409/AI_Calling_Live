@@ -470,7 +470,7 @@ async function fetchData() {
         const borrowers = await response.json();
         if (borrowers && Array.isArray(borrowers)) {
             // Build structure matching the upload response
-            const bySma = { SMA0: [], SMA1: [], SMA2: [], SMA3: [], NPA: [] };
+            const bySma = { SMA0: [], SMA1: [], SMA2: [], NPA: [] };
             let totalArrears = 0;
             borrowers.forEach(b => {
                 const cat = b.Payment_Category || 'SMA0';
@@ -680,7 +680,6 @@ function updateDashboard(data) {
         updateCardLocal('SMA0', bySma['SMA0']);
         updateCardLocal('SMA1', bySma['SMA1']);
         updateCardLocal('SMA2', bySma['SMA2']);
-        updateCardLocal('SMA3', bySma['SMA3']);
         updateCardLocal('NPA', bySma['NPA']);
     }
 
@@ -728,7 +727,6 @@ function showSummaryDetailsListView(periodKey) {
         'SMA0': 'SMA0 (0-30 Days)',
         'SMA1': 'SMA1 (31-60 Days)',
         'SMA2': 'SMA2 (61-90 Days)',
-        'SMA3': 'SMA3 (91+ Days)',
         'NPA': 'NPA (Non-Performing Asset)'
     };
 

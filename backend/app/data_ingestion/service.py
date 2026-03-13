@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 def categorize_customer(row):
     """
     Categorize customer based on acstatus from Excel.
-    Returns: SMA0, SMA1, SMA2, SMA3, or NPA
+    Returns: SMA0, SMA1, SMA2, or NPA
     """
     acstatus = str(row.get('acstatus', '')).upper().strip()
     
@@ -14,8 +14,6 @@ def categorize_customer(row):
         return 'SMA1'
     elif 'SMA2' in acstatus:
         return 'SMA2'
-    elif 'SMA3' in acstatus:
-        return 'SMA3'
     elif 'NPA' in acstatus:
         return 'NPA'
     else:

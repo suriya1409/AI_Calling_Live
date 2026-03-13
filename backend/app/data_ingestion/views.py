@@ -142,7 +142,6 @@ async def unified_data_endpoint(
         "SMA0": [],
         "SMA1": [],
         "SMA2": [],
-        "SMA3": [],
         "NPA": []
     }
     
