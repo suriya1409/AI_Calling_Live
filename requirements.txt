@@ -28,6 +28,7 @@ python-dotenv
 
 # CORS
 starlette
+flask-cors
 
 # Additional utilities
 pydantic
@@ -37,6 +38,7 @@ WebSocket
 # Data processing dependencies
 pandas
 openpyxl
+xlrd
 
 
 # Mongo DB

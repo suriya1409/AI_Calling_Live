@@ -181,13 +181,7 @@ function setupEventListeners() {
         btn.addEventListener('click', (e) => {
             const card = e.target.closest('.period-card');
             const period = card.dataset.period;
-
-            let periodKey = '';
-            if (period === '1to7') periodKey = '1-7_days';
-            else if (period === 'more7') periodKey = 'More_than_7_days';
-            else if (period === 'today') periodKey = 'Today';
-
-            showSummaryDetailsListView(periodKey);
+            showSummaryDetailsListView(period);
         });
     });
 
@@ -447,27 +441,53 @@ async function handleRegister(e) {
     }
 }
 
-// Fetch existing data from API
+// Fetch existing data from API (GET - no file upload, just reads DB)
 async function fetchData() {
     if (!authToken) return;
 
     showLoading(true);
     try {
-        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/data_ingestion/data?include_details=true`, {
-            method: 'POST'
+        // Use GET endpoint so we never trigger delete+insert on page load
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/data_ingestion/borrowers?limit=2000`, {
+            method: 'GET'
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || 'Failed to fetch existing data');
+            // Fallback: use the POST endpoint without a file
+            const fallback = await makeAuthenticatedRequest(`${API_BASE_URL}/data_ingestion/data?include_details=true`, {
+                method: 'POST'
+            });
+            if (!fallback.ok) throw new Error('Failed to fetch data');
+            const data = await fallback.json();
+            if (data && data.kpis) {
+                currentKpiData = data;
+                localStorage.setItem('finance_data', JSON.stringify(data));
+                updateDashboard(data);
+            }
+            return;
         }
 
-        const data = await response.json();
-        if (data && data.kpis) {
+        const borrowers = await response.json();
+        if (borrowers && Array.isArray(borrowers)) {
+            // Build structure matching the upload response
+            const bySma = { SMA0: [], SMA1: [], SMA2: [], SMA3: [], NPA: [] };
+            let totalArrears = 0;
+            borrowers.forEach(b => {
+                const cat = b.Payment_Category || 'SMA0';
+                if (bySma[cat]) bySma[cat].push(b);
+                else bySma['SMA0'].push(b);
+                totalArrears += parseFloat(b.amtfin || b.AMOUNT || 0);
+            });
+            const data = {
+                status: 'success',
+                kpis: { total_borrowers: borrowers.length, total_arrears: totalArrears },
+                detailed_breakdown: { by_sma_category: bySma },
+                uploaded: false
+            };
             currentKpiData = data;
             localStorage.setItem('finance_data', JSON.stringify(data));
             updateDashboard(data);
-            console.log('✅ Data fetched successfully from API');
+            console.log('✅ Data fetched from borrowers endpoint', borrowers.length, 'borrowers');
         }
     } catch (error) {
         console.error('Fetch data error:', error);
@@ -655,11 +675,13 @@ function updateDashboard(data) {
     if (arrearsEl) arrearsEl.textContent =
         `₹${(data.kpis.total_arrears || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    if (data.detailed_breakdown && data.detailed_breakdown.by_due_date_category) {
-        const byDate = data.detailed_breakdown.by_due_date_category;
-        updateCardLocal('more7', byDate['More_than_7_days']);
-        updateCardLocal('oneToSeven', byDate['1-7_days']);
-        updateCardLocal('today', byDate['Today']);
+    if (data.detailed_breakdown && data.detailed_breakdown.by_sma_category) {
+        const bySma = data.detailed_breakdown.by_sma_category;
+        updateCardLocal('SMA0', bySma['SMA0']);
+        updateCardLocal('SMA1', bySma['SMA1']);
+        updateCardLocal('SMA2', bySma['SMA2']);
+        updateCardLocal('SMA3', bySma['SMA3']);
+        updateCardLocal('NPA', bySma['NPA']);
     }
 
     // Update tables if we're on those views
@@ -672,25 +694,21 @@ function updateDashboard(data) {
 
 // Helper to calculate counts locally and update UI
 function updateCardLocal(prefix, borrowersList) {
-    if (!borrowersList || !Array.isArray(borrowersList)) {
-        document.querySelector(`#${prefix}-consistent .count`).textContent = 0;
-        document.querySelector(`#${prefix}-inconsistent .count`).textContent = 0;
-        document.querySelector(`#${prefix}-overdue .count`).textContent = 0;
-        return;
+    const container = document.getElementById(`${prefix}-count`);
+    if (!container) return;
+    
+    const countEl = container.querySelector('.count');
+    if (!countEl) return;
+    
+    const count = (borrowersList && Array.isArray(borrowersList)) ? borrowersList.length : 0;
+    countEl.textContent = count;
+    
+    // Also update any badge on the card header if present
+    const card = container.closest('.period-card');
+    if (card) {
+        const badge = card.querySelector('.period-badge');
+        if (badge) badge.textContent = count;
     }
-
-    let consistent = 0, inconsistent = 0, overdue = 0;
-
-    borrowersList.forEach(b => {
-        const category = b.Payment_Category;
-        if (category === 'Consistent') consistent++;
-        else if (category === 'Inconsistent') inconsistent++;
-        else if (category === 'Overdue') overdue++;
-    });
-
-    document.querySelector(`#${prefix}-consistent .count`).textContent = consistent;
-    document.querySelector(`#${prefix}-inconsistent .count`).textContent = inconsistent;
-    document.querySelector(`#${prefix}-overdue .count`).textContent = overdue;
 }
 
 // Show Summary Details List View
@@ -702,14 +720,16 @@ function showSummaryDetailsListView(periodKey) {
         return;
     }
 
-    const byDate = currentKpiData.detailed_breakdown.by_due_date_category;
-    const borrowers = byDate[periodKey] || [];
-
+    const bySma = currentKpiData.detailed_breakdown.by_sma_category;
+    const borrowers = bySma[periodKey] || [];
+ 
     // Map keys to labels
     const periodLabels = {
-        'More_than_7_days': 'More than 7 Days',
-        '1-7_days': '1-7 Days',
-        'Today': '6th Feb (Today Data)'
+        'SMA0': 'SMA0 (0-30 Days)',
+        'SMA1': 'SMA1 (31-60 Days)',
+        'SMA2': 'SMA2 (61-90 Days)',
+        'SMA3': 'SMA3 (91+ Days)',
+        'NPA': 'NPA (Non-Performing Asset)'
     };
 
     const labelEl = document.getElementById('selectedPeriodLabel');
@@ -798,9 +818,11 @@ function createCallDataRow(borrower) {
         statusBtnClass = "success";
     }
 
-    const lastPaid = borrower['LAST DUE REVD DATE'] || borrower['LAST DUE/REVD DATE'] || borrower.LAST_PAID_DATE || borrower.DUE_DATE || 'N/A';
-    const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    const totalAmount = (borrower.TOTAL_LOAN || (borrower.AMOUNT * 1.5) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const acstatus = borrower.acstatus || borrower.Payment_Category || 'N/A';
+    const amount = (borrower.amtfin || borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const account = borrower.account || borrower.NO || 'N/A';
+    const h_name = borrower.h_name || borrower.BORROWER || 'N/A';
+    const contnr = borrower.contnr || 'N/A';
 
     wrapper.innerHTML = `
         <div class="call-row">
@@ -808,15 +830,15 @@ function createCallDataRow(borrower) {
                 <input type="checkbox" class="row-checkbox" data-id="${borrower.NO}">
             </div>
             <div class="borrower-cell">
-                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(borrower.BORROWER)}&background=random" class="borrower-avatar" alt="${borrower.BORROWER}">
+                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(h_name)}&background=random" class="borrower-avatar" alt="${h_name}">
                 <div class="borrower-meta">
-                    <h4>${borrower.BORROWER}</h4>
-                    <p>Last paid: ${lastPaid}</p>
+                    <h4>${h_name}</h4>
+                    <p>Acc: ${account} | Status: ${acstatus}</p>
                 </div>
             </div>
-            <div class="due-cell">$${amount}</div>
-            <div class="total-cell">$${totalAmount}</div>
-            <div class="status-cell ${statusClass}">${interactionType}</div>
+            <div class="due-cell">₹${amount}</div>
+            <div class="total-cell">${contnr}</div>
+            <div class="status-cell ${statusClass}">${acstatus}</div>
             <div class="action-cell">
                 <button class="status-btn ${statusBtnClass}">
                     <span>${callStatus}</span>
@@ -825,6 +847,28 @@ function createCallDataRow(borrower) {
             </div>
         </div>
         <div class="expanded-content">
+            <div class="details-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; padding: 15px; background: #f9fafb; border-radius: 12px; margin-bottom: 15px; border: 1px solid #e5e7eb;">
+                <div class="detail-item">
+                    <span class="detail-label" style="display: block; font-size: 11px; color: #6b7280; font-weight: 600; text-transform: uppercase;">Account</span>
+                    <span class="detail-value" style="font-weight: 700; color: #1f2937;">${account}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label" style="display: block; font-size: 11px; color: #6b7280; font-weight: 600; text-transform: uppercase;">Holder Name</span>
+                    <span class="detail-value" style="font-weight: 700; color: #1f2937;">${h_name}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label" style="display: block; font-size: 11px; color: #6b7280; font-weight: 600; text-transform: uppercase;">Status</span>
+                    <span class="detail-value" style="font-weight: 700; color: #1f2937;">${acstatus}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label" style="display: block; font-size: 11px; color: #6b7280; font-weight: 600; text-transform: uppercase;">Container</span>
+                    <span class="detail-value" style="font-weight: 700; color: #1f2937;">${contnr}</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label" style="display: block; font-size: 11px; color: #6b7280; font-weight: 600; text-transform: uppercase;">Amount Financed</span>
+                    <span class="detail-value" style="font-weight: 700; color: #1f2937;">₹${amount}</span>
+                </div>
+            </div>
             <div class="conversation-card">
                 <div class="card-header">
                     <span class="icon">✨</span> AI Conversation

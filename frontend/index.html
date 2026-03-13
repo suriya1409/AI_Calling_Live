@@ -166,30 +166,50 @@
                     </div>
                 </div>
 
-                <div class="time-period-cards">
-                    <!-- More than 7 Days Card -->
-                    <div class="period-card glass-panel" data-period="more7">
+                <div class="time-period-cards" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                    <!-- SMA0 Card -->
+                    <div class="period-card glass-panel" data-period="SMA0">
                         <div class="period-header">
-                            <h3>More than 7 Days</h3>
+                            <h3>SMA0</h3>
                         </div>
                         <div class="period-stats">
                             <div class="stat-row">
-                                <span class="stat-label">Consistent Payer</span>
-                                <span class="stat-value" id="more7-consistent">
+                                <span class="stat-label">Count</span>
+                                <span class="stat-value" id="SMA0-count">
                                     <span class="count">0</span>
                                     <span class="emoji green">👥</span>
                                 </span>
                             </div>
+                        </div>
+                        <button class="view-details-btn">View Details →</button>
+                    </div>
+
+                    <!-- SMA1 Card -->
+                    <div class="period-card glass-panel" data-period="SMA1">
+                        <div class="period-header">
+                            <h3>SMA1</h3>
+                        </div>
+                        <div class="period-stats">
                             <div class="stat-row">
-                                <span class="stat-label">Inconsistent Payer</span>
-                                <span class="stat-value" id="more7-inconsistent">
+                                <span class="stat-label">Count</span>
+                                <span class="stat-value" id="SMA1-count">
                                     <span class="count">0</span>
                                     <span class="emoji orange">👥</span>
                                 </span>
                             </div>
+                        </div>
+                        <button class="view-details-btn">View Details →</button>
+                    </div>
+
+                    <!-- SMA2 Card -->
+                    <div class="period-card glass-panel" data-period="SMA2">
+                        <div class="period-header">
+                            <h3>SMA2</h3>
+                        </div>
+                        <div class="period-stats">
                             <div class="stat-row">
-                                <span class="stat-label">Overdue Payer</span>
-                                <span class="stat-value" id="more7-overdue">
+                                <span class="stat-label">Count</span>
+                                <span class="stat-value" id="SMA2-count">
                                     <span class="count">0</span>
                                     <span class="emoji red">🔔</span>
                                 </span>
@@ -198,62 +218,34 @@
                         <button class="view-details-btn">View Details →</button>
                     </div>
 
-                    <!-- 1-7 Days Card -->
-                    <div class="period-card glass-panel" data-period="1to7">
+                    <!-- SMA3 Card -->
+                    <div class="period-card glass-panel" data-period="SMA3">
                         <div class="period-header">
-                            <h3>1-7 Days</h3>
+                            <h3>SMA3</h3>
                         </div>
                         <div class="period-stats">
                             <div class="stat-row">
-                                <span class="stat-label">Consistent Payer</span>
-                                <span class="stat-value" id="oneToSeven-consistent">
+                                <span class="stat-label">Count</span>
+                                <span class="stat-value" id="SMA3-count">
                                     <span class="count">0</span>
-                                    <span class="emoji green">👥</span>
-                                </span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Inconsistent Payer</span>
-                                <span class="stat-value" id="oneToSeven-inconsistent">
-                                    <span class="count">0</span>
-                                    <span class="emoji orange">👥</span>
-                                </span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Overdue Payer</span>
-                                <span class="stat-value" id="oneToSeven-overdue">
-                                    <span class="count">0</span>
-                                    <span class="emoji red">🔔</span>
+                                    <span class="emoji red">🚨</span>
                                 </span>
                             </div>
                         </div>
                         <button class="view-details-btn">View Details →</button>
                     </div>
 
-                    <!-- Today Card -->
-                    <div class="period-card glass-panel" data-period="today">
+                    <!-- NPA Card -->
+                    <div class="period-card glass-panel" data-period="NPA">
                         <div class="period-header">
-                            <h3>Today</h3>
+                            <h3>NPA</h3>
                         </div>
                         <div class="period-stats">
                             <div class="stat-row">
-                                <span class="stat-label">Consistent Payer</span>
-                                <span class="stat-value" id="today-consistent">
+                                <span class="stat-label">Count</span>
+                                <span class="stat-value" id="NPA-count">
                                     <span class="count">0</span>
-                                    <span class="emoji green">👥</span>
-                                </span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Inconsistent Payer</span>
-                                <span class="stat-value" id="today-inconsistent">
-                                    <span class="count">0</span>
-                                    <span class="emoji orange">👥</span>
-                                </span>
-                            </div>
-                            <div class="stat-row">
-                                <span class="stat-label">Overdue Payer</span>
-                                <span class="stat-value" id="today-overdue">
-                                    <span class="count">0</span>
-                                    <span class="emoji red">🔔</span>
+                                    <span class="emoji red">📢</span>
                                 </span>
                             </div>
                         </div>
