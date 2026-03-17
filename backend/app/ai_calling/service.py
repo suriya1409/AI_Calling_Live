@@ -153,29 +153,16 @@ def detect_gender_from_name(name: str) -> str:
 
 def calculate_follow_up_schedule(category):
     """
-    Calculate follow-up dates based on category (Skipping Weekends):
-    - Consistent: 1 call next week (business day)
-    - Inconsistent: 3 calls (next 3 business days)
-    - Overdue: Daily (next 7 business days)
+    Calculate follow-up dates based on acstatus category (Skipping Weekends):
+    All statuses get 3 calls/week (next 3 business days) since calls are
+    triggered after the due date has already crossed.
     """
     from datetime import timedelta
     today = datetime.now()
     dates = []
     
-    category = (category or "").lower()
-    
-    if "inconsistent" in category:
-        required_dates = 3
-        desc = "3 calls/week"
-    elif "overdue" in category:
-        required_dates = 7
-        desc = "Daily (Business Days)"
-    else:
-        # Consistent: Just 1 call approximately a week later
-        required_dates = 1
-        # Start looking from 7 days ahead
-        today = today + timedelta(days=6) 
-        desc = "1 call/week"
+    required_dates = 3
+    desc = "3 calls/week"
         
     current_date = today
     count = 0
@@ -193,6 +180,18 @@ def calculate_follow_up_schedule(category):
         
     return ", ".join(dates), desc
 
+def _get_next_n_business_days(from_date, n=3):
+    """Helper: returns a list of the next N business day date strings (skipping weekends) from a given date."""
+    from datetime import timedelta
+    dates = []
+    current = from_date
+    while len(dates) < n:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # Mon-Fri
+            dates.append(current.strftime("%Y-%m-%d"))
+    return dates
+
+
 def determine_report_outcomes(intent, payment_date, category, borrower_name="Borrower", borrower_id="", is_mid_call=False):
     """
     Centralized logic to determine:
@@ -201,28 +200,33 @@ def determine_report_outcomes(intent, payment_date, category, borrower_name="Bor
     - call_frequency
     - require_manual_process
     - email_to_manager_preview
-    - next_step_summary
+    - next_step_summary  (NOW: detailed AI summary based on intent)
     """
     from datetime import datetime, timedelta
     
     intent = (intent or "No Response").strip()
-    category = (category or "Consistent").strip()
+    category = (category or "SMA0").strip().upper()
     
     next_step_summary = ""
     email_draft = None
     require_manual_process = False
     payment_confirmation = intent
+    today = datetime.now()
+    today_str = today.strftime("%Y-%m-%d")
     
     # 1. Handle Dates & Freq
     if is_mid_call:
         # Re-trigger Next Day
-        today = datetime.now()
         next_day = today + timedelta(days=1)
-        if next_day.weekday() >= 5: # Skip to Monday
+        if next_day.weekday() >= 5:  # Skip to Monday
             next_day += timedelta(days=(7 - next_day.weekday()))
         follow_up_date = next_day.strftime("%Y-%m-%d")
         call_frequency = "1 call (Retry)"
-        next_step_summary = "The borrower hung up mid-sentence. System scheduled a follow-up retry for the next business day."
+        next_step_summary = (
+            f"Borrower {borrower_name} hung up mid-sentence. "
+            f"System scheduled a follow-up retry for the next business day ({follow_up_date}). "
+            f"Finance team needs to re-trigger the call on {follow_up_date}."
+        )
     elif payment_date and payment_date.lower() != "null":
         payment_confirmation = payment_date
         follow_up_date = payment_date
@@ -230,46 +234,180 @@ def determine_report_outcomes(intent, payment_date, category, borrower_name="Bor
     else:
         follow_up_date, call_frequency = calculate_follow_up_schedule(category)
 
-    # 2. Logic for Manual Process & Email Previews
-    escalation_intents = ["Paid", "Dispute", "No Response", "Abusive Language", "Threatening Language", "Stop Calling"]
-    
-    if intent in escalation_intents:
-        require_manual_process = True
-        
-        if intent == "Paid":
-            next_step_summary = f"Borrower {borrower_name} claims payment made. Please verify."
-            subject = f"Payment Verification Required: {borrower_name}"
-            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) claims they have already paid. Please verify the transaction.\n\nBest regards,\nAI System"
-        elif intent == "Dispute":
-            next_step_summary = "Borrower is disputing the loan payment. Escalating for manual investigation."
-            subject = f"Payment Dispute: {borrower_name}"
-            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) is disputing the loan amount/terms. Manual investigation required.\n\nBest regards,\nAI System"
-        elif intent == "No Response":
-            next_step_summary = "No clear response from borrower. Escalating for manual follow-up."
-            subject = f"No Response Escalation: {borrower_name}"
-            body = f"Hi Area Manager,\n\nWe could not get a clear response from {borrower_name} ({borrower_id}). Please follow up manually.\n\nBest regards,\nAI System"
-        elif intent == "Abusive Language":
-            next_step_summary = "Borrower used abusive language. Escalating for manual process."
-            subject = f"Alert: Abusive Language - {borrower_name}"
-            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) was abusive during the call. Initiating manual handling.\n\nBest regards,\nAI System"
-        elif intent == "Threatening Language":
-            next_step_summary = "Borrower used threatening language. Escalating for manual process."
-            subject = f"Security Alert: {borrower_name}"
-            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) was threatening. Please handle this case with priority.\n\nBest regards,\nAI System"
-        elif intent == "Stop Calling":
-            next_step_summary = "Borrower requested to stop calls. Escalating for manual process."
-            subject = f"DNC Request: {borrower_name}"
-            body = f"Hi Area Manager,\n\nBorrower {borrower_name} ({borrower_id}) requested to stop calling. Please update legal status.\n\nBest regards,\nAI System"
-        
-        email_draft = {"to": "Area Manager", "subject": subject, "body": body}
+    # ──────────────────────────────────────────────
+    # 2. DETAILED AI SUMMARY GENERATION PER INTENT
+    # ──────────────────────────────────────────────
 
-    elif intent == "Will Pay" or intent == "Needs Extension":
+    # Helper: build follow-up dates string
+    follow_up_dates_list = follow_up_date.split(", ") if follow_up_date else []
+    follow_up_dates_display = ", ".join(follow_up_dates_list) if follow_up_dates_list else "N/A"
+
+    escalation_intents = ["Paid", "Dispute", "No Response", "Abusive Language", "Threatening Language", "Stop Calling"]
+
+    if intent == "Will Pay":
+        # ── WILL PAY with confirmation date ──
         require_manual_process = False
         email_draft = None
-        if payment_date:
-            next_step_summary = f"Borrower committed to pay/extend until {payment_date}."
+
+        if payment_date and payment_date.lower() != "null":
+            # Borrower gave a specific confirmation date
+            biz_days_after_confirm = _get_next_n_business_days(
+                datetime.strptime(payment_date, "%Y-%m-%d"), 3
+            )
+            follow_up_date = ", ".join(biz_days_after_confirm)
+            call_frequency = "3 calls/week (Post-Confirmation)"
+
+            next_step_summary = (
+                f"Borrower {borrower_name} committed to pay on {payment_date}. "
+                f"Follow-up dates are set to {', '.join(biz_days_after_confirm)} (next 3 business days after confirmation date). "
+                f"Finance team needs to check whether the borrower has paid the loan on {payment_date}. "
+                f"If payment is not received by {payment_date}, fall back to the next day to trigger the call."
+            )
         else:
-            next_step_summary = f"Borrower committed to {intent}. Follow-up scheduled."
+            # Borrower said Will Pay but did NOT give a specific date
+            biz_days_from_today = _get_next_n_business_days(today, 3)
+            follow_up_date = ", ".join(biz_days_from_today)
+            call_frequency = "3 calls/week"
+
+            next_step_summary = (
+                f"Borrower {borrower_name} committed to pay but did not provide a specific confirmation date. "
+                f"Follow-up dates are set to {', '.join(biz_days_from_today)} (next 3 business days from today). "
+                f"Finance team needs to check whether the borrower has paid the loan on these dates. "
+                f"If payment is not received, fall back to the next day to trigger the call."
+            )
+
+    elif intent == "Needs Extension":
+        require_manual_process = False
+        email_draft = None
+        if payment_date and payment_date.lower() != "null":
+            biz_days_after = _get_next_n_business_days(
+                datetime.strptime(payment_date, "%Y-%m-%d"), 3
+            )
+            follow_up_date = ", ".join(biz_days_after)
+            call_frequency = "3 calls/week (Post-Extension)"
+            next_step_summary = (
+                f"Borrower {borrower_name} requested an extension until {payment_date}. "
+                f"Follow-up dates are set to {', '.join(biz_days_after)} (next 3 business days after extension date). "
+                f"Finance team needs to verify if payment is made by {payment_date}, otherwise trigger follow-up calls."
+            )
+        else:
+            biz_days_from_today = _get_next_n_business_days(today, 3)
+            follow_up_date = ", ".join(biz_days_from_today)
+            call_frequency = "3 calls/week"
+            next_step_summary = (
+                f"Borrower {borrower_name} requested an extension but did not provide a specific date. "
+                f"Follow-up dates are set to {', '.join(biz_days_from_today)} (next 3 business days from today). "
+                f"Finance team needs to follow up and verify payment status."
+            )
+
+    elif intent == "Paid":
+        # ── ALREADY PAID ──
+        require_manual_process = True
+        claim_date = payment_date if (payment_date and payment_date.lower() != "null") else "a recent date (not specified)"
+
+        next_step_summary = (
+            f"Borrower {borrower_name} claims to have already paid on {claim_date}. "
+            f"Finance team needs to verify whether this borrower has actually paid the loan. "
+            f"If the payment is not confirmed in the system, finance team needs to do manual calling to resolve the discrepancy."
+        )
+        subject = f"Payment Verification Required: {borrower_name}"
+        body = (
+            f"Hi Area Manager,\n\n"
+            f"Borrower {borrower_name} ({borrower_id}) claims they have already paid on {claim_date}. "
+            f"Please verify the transaction in the system.\n\n"
+            f"If payment is not found, please initiate manual follow-up.\n\n"
+            f"Best regards,\nAI Collection System"
+        )
+        email_draft = {"to": "Area Manager", "subject": subject, "body": body}
+
+    elif intent in ["Abusive Language", "Threatening Language", "Dispute"]:
+        # ── ABUSIVE / THREATENING / DISPUTE ──
+        require_manual_process = True
+
+        # Calculate next day from current trigger day
+        next_retry = today + timedelta(days=1)
+        if next_retry.weekday() >= 5:
+            next_retry += timedelta(days=(7 - next_retry.weekday()))
+        next_retry_str = next_retry.strftime("%Y-%m-%d")
+
+        # Determine the type label for the summary
+        if intent == "Abusive Language":
+            behavior_label = "abusive language"
+        elif intent == "Threatening Language":
+            behavior_label = "threatening language"
+        else:
+            behavior_label = "dispute"
+
+        next_step_summary = (
+            f"Borrower {borrower_name} used {behavior_label} during the call. This requires manual calling. "
+            f"On the next day from the current trigger day ({next_retry_str}), retry calling this borrower. "
+            f"Escalation has been raised for the finance team to handle this case with priority."
+        )
+
+        # Override follow-up to next business day for retry
+        follow_up_date = next_retry_str
+        call_frequency = "1 call (Retry - Escalated)"
+
+        if intent == "Abusive Language":
+            subject = f"Alert: Abusive Language - {borrower_name}"
+            body = (
+                f"Hi Area Manager,\n\n"
+                f"Borrower {borrower_name} ({borrower_id}) used abusive language during the AI call. "
+                f"Manual handling is required. A retry call is scheduled for {next_retry_str}.\n\n"
+                f"Best regards,\nAI Collection System"
+            )
+        elif intent == "Threatening Language":
+            subject = f"Security Alert: Threatening Language - {borrower_name}"
+            body = (
+                f"Hi Area Manager,\n\n"
+                f"Borrower {borrower_name} ({borrower_id}) made threatening remarks during the call. "
+                f"Please handle this case with priority. A retry call is scheduled for {next_retry_str}.\n\n"
+                f"Best regards,\nAI Collection System"
+            )
+        else:  # Dispute
+            subject = f"Payment Dispute: {borrower_name}"
+            body = (
+                f"Hi Area Manager,\n\n"
+                f"Borrower {borrower_name} ({borrower_id}) is disputing the loan amount/terms. "
+                f"Manual investigation required. A retry call is scheduled for {next_retry_str}.\n\n"
+                f"Best regards,\nAI Collection System"
+            )
+        email_draft = {"to": "Area Manager", "subject": subject, "body": body}
+
+    elif intent == "No Response":
+        require_manual_process = True
+        next_step_summary = (
+            f"No clear response received from borrower {borrower_name}. "
+            f"Escalating for manual follow-up. Finance team needs to attempt manual calling."
+        )
+        subject = f"No Response Escalation: {borrower_name}"
+        body = (
+            f"Hi Area Manager,\n\n"
+            f"We could not get a clear response from {borrower_name} ({borrower_id}). "
+            f"Please follow up manually.\n\n"
+            f"Best regards,\nAI Collection System"
+        )
+        email_draft = {"to": "Area Manager", "subject": subject, "body": body}
+
+    elif intent == "Stop Calling":
+        require_manual_process = True
+        next_step_summary = (
+            f"Borrower {borrower_name} requested to stop all calls. "
+            f"Escalating to the legal/compliance team. Finance team needs to update DNC (Do Not Call) status."
+        )
+        subject = f"DNC Request: {borrower_name}"
+        body = (
+            f"Hi Area Manager,\n\n"
+            f"Borrower {borrower_name} ({borrower_id}) requested to stop calling. "
+            f"Please update legal/DNC status.\n\n"
+            f"Best regards,\nAI Collection System"
+        )
+        email_draft = {"to": "Area Manager", "subject": subject, "body": body}
+
+    else:
+        # Fallback for any other/unknown intent
+        if not next_step_summary:
+            next_step_summary = f"Call completed with borrower {borrower_name}. Intent: {intent}. Follow-up scheduled."
 
     return {
         "payment_confirmation": payment_confirmation,
@@ -900,20 +1038,52 @@ def generate_ai_response(user_text, language="en-IN", context=None):
             f"- Loan No: {bi.get('loan_no', 'N/A')}\n"
         )
     
-    # System prompts with structured conversation flow
+    # ── BUILD STATUS-SPECIFIC TONE MODIFIER ──
+    acstatus = "SMA0"
+    if context and "borrower_info" in context:
+        acstatus = context["borrower_info"].get("acstatus", "SMA0")
+    
+    tone_instructions = {
+        "SMA0": {
+            "en": "TONE: Soft and polite. The borrower has missed ONE month's payment. Gently inform them about the missed payment, warn about potential NPA status and credit score impact. Request payment or a payment commitment.",
+            "hi": "टोन: नरम और विनम्र। उधारकर्ता ने एक महीने का भुगतान नहीं किया है। उन्हें NPA और क्रेडिट स्कोर प्रभाव के बारे में सूचित करें। भुगतान या प्रतिबद्धता का अनुरोध करें।",
+            "ta": "தொனி: மென்மையான மற்றும் கண்ணியமான. கடன் வாங்கியவர் ஒரு மாத தவணை தவறவிட்டுள்ளார். NPA மற்றும் கடன் மதிப்பெண் பாதிப்பு பற்றி தெரிவிக்கவும். பணம் செலுத்த கோரவும்."
+        },
+        "SMA1": {
+            "en": "TONE: More urgent. The borrower has missed TWO months' payments. Highlight the serious risk of NPA classification and drastic credit score reduction. Request payment for BOTH months and ask for a firm payment commitment.",
+            "hi": "टोन: अधिक गंभीर। उधारकर्ता ने दो महीने का भुगतान नहीं किया है। NPA वर्गीकरण और क्रेडिट स्कोर में भारी गिरावट के खतरे पर जोर दें। दोनों महीनों का भुगतान मांगें।",
+            "ta": "தொனி: மிகவும் அவசரமான. கடன் வாங்கியவர் இரண்டு மாத தவணை தவறவிட்டுள்ளார். NPA வகைப்பாடு மற்றும் கடன் மதிப்பெண் வீழ்ச்சி பற்றி வலியுறுத்தவும்."
+        },
+        "SMA2": {
+            "en": "TONE: Serious and firm. The borrower has missed THREE months' payments. Emphasize IMMINENT NPA classification, the need to avoid further escalation, and possible legal consequences. Request payment for all three months and ask about payment plans.",
+            "hi": "टोन: गंभीर और दृढ़। उधारकर्ता ने तीन महीने का भुगतान नहीं किया है। NPA वर्गीकरण और कानूनी कार्रवाई की संभावना पर जोर दें। तीनों महीनों के भुगतान की मांग करें।",
+            "ta": "தொனி: தீவிரமான மற்றும் உறுதியான. கடன் வாங்கியவர் மூன்று மாத தவணை தவறவிட்டுள்ளார். NPA வகைப்பாடு மற்றும் சட்ட நடவடிக்கை பற்றி வலியுறுத்தவும்."
+        },
+        "NPA": {
+            "en": "TONE: Direct and authoritative. The borrower's account is classified as NPA (Non-Performing Asset). Acknowledge the NPA status, inform about the already-affected credit score, and URGENTLY request payment to avoid further escalation including legal proceedings.",
+            "hi": "टोन: सीधा और अधिकारपूर्ण। उधारकर्ता का खाता NPA है। NPA स्थिति स्वीकार करें, प्रभावित क्रेडिट स्कोर बताएं, कानूनी कार्रवाई से बचने के लिए तुरंत भुगतान की मांग करें।",
+            "ta": "தொனி: நேரடி மற்றும் அதிகாரபூர்வமான. கடன் வாங்கியவரின் கணக்கு NPA ஆக வகைப்படுத்தப்பட்டுள்ளது. சட்ட நடவடிக்கை தவிர்க்க உடனடியாக பணம் செலுத்த கோரவும்."
+        }
+    }
+    
+    tone = tone_instructions.get(acstatus.upper(), tone_instructions["SMA0"])
+    
+    # System prompts with structured conversation flow (status-aware, due date crossed)
     sys_prompts = {
         "en-IN": (
-            "You are Vidya, a polite loan collection assistant on a PHONE CALL. "
+            "You are Vidya, a loan collection assistant on a PHONE CALL. "
             "CRITICAL RULES:\n"
             "- Respond in English. Keep replies to 1-2 SHORT sentences (max 25 words total).\n"
             "- Never repeat what you already said. Be empathetic but direct.\n"
             f"- Address the borrower as '{honorific_en}' (based on their gender).\n"
             "- NEVER ask for information you already have (amount, name, dates).\n"
+            f"- {tone['en']}\n"
+            f"- The borrower's account status is: {acstatus}. The payment due date has ALREADY PASSED.\n"
             "\nCONVERSATION FLOW TO FOLLOW:\n"
-            "1. GREETING (already done): 'Hi Mr/Mrs [Name], hope you are doing well today. We are calling from the Loan sector, this is a general check-up call regarding the Loan amount that you have borrowed. Your due date is coming up soon [date]. Can you please let us know if you will be paying the balance amount before due date?'\n"
-            "2. If borrower confirms they WILL PAY: 'Good to know {honorific}, we will update our records accordingly. Do you have any questions for us?'\n"
-            "3. If borrower asks about loan amounts: 'Sure {honorific}, your current outstanding loan amount is [amount] and after payment of the due this month your loan amount would be [remaining].'\n"
-            "4. When borrower says thank you or has no more questions: 'Thank you {honorific}, have a good day!'\n"
+            "1. GREETING (already done): Inform borrower about missed payment(s), warn about credit score impact and NPA risk.\n"
+            f"2. If borrower confirms they WILL PAY: 'Good to know {honorific_en}, we will update our records. Do you have any questions?'\n"
+            f"3. If borrower asks about loan amounts: 'Sure {honorific_en}, your current outstanding is [amount] and after this month's payment it would be [remaining].'\n"
+            f"4. When borrower says thank you or has no more questions: 'Thank you {honorific_en}, have a good day!'\n"
             "5. For any other scenario (dispute, extension, abusive etc.), handle professionally in 1 sentence.\n"
             + borrower_info_str
         ),
@@ -923,28 +1093,32 @@ def generate_ai_response(user_text, language="en-IN", context=None):
             "- हिंदी में जवाब दें। 1-2 छोटे वाक्यों में (अधिकतम 25 शब्द) जवाब दें।\n"
             "- जो पहले कह चुकी हैं वो दोबारा न कहें।\n"
             f"- उधारकर्ता को '{honorific_hi}' कहें (उनके लिंग के आधार पर)।\n"
-            "- जो जानकारी आपके पास पहले से है (राशि, नाम, तारीख) वो कभी न पूछें।\n"
+            "- जो जानकारी आपके पास पहले से है वो कभी न पूछें।\n"
+            f"- {tone['hi']}\n"
+            f"- उधारकर्ता का खाता स्थिति: {acstatus}। भुगतान की due date पहले ही बीत चुकी है।\n"
             "\nबातचीत का क्रम:\n"
-            "1. अभिवादन (पहले ही हो चुका): 'नमस्ते श्री/श्रीमती [नाम] जी, आशा है आप अच्छे हैं। हम लोन सेक्टर से कॉल कर रहे हैं, यह आपके उधार लिए गए लोन के बारे में एक सामान्य फॉलो-अप कॉल है। आपकी due date जल्द आ रही है [तारीख]। क्या आप due date से पहले बकाया राशि का भुगतान कर देंगे?'\n"
-            f"2. अगर उधारकर्ता भुगतान की पुष्टि करे: 'यह सुनकर अच्छा लगा {honorific_hi}, हम अपने रिकॉर्ड अपडेट कर देंगे। क्या आपका कोई सवाल है?'\n"
-            f"3. अगर लोन राशि पूछें: 'जी {honorific_hi}, आपकी वर्तमान कुल बकाया लोन राशि [राशि] है और इस महीने के भुगतान के बाद आपकी बकाया राशि [शेष] होगी।'\n"
-            f"4. जब उधारकर्ता धन्यवाद कहें या कोई सवाल न हो: 'धन्यवाद {honorific_hi}, आपका दिन शुभ हो!'\n"
-            "5. किसी भी अन्य स्थिति (विवाद, एक्सटेंशन, अभद्र) को 1 वाक्य में पेशेवर तरीके से संभालें।\n"
+            "1. अभिवादन (पहले ही हो चुका): छूटे हुए भुगतान के बारे में सूचित करें, क्रेडिट स्कोर और NPA जोखिम की चेतावनी दें।\n"
+            f"2. अगर उधारकर्ता भुगतान की पुष्टि करे: 'यह सुनकर अच्छा लगा {honorific_hi}, हम रिकॉर्ड अपडेट कर देंगे। कोई सवाल?'\n"
+            f"3. अगर लोन राशि पूछें: 'जी {honorific_hi}, आपकी वर्तमान बकाया राशि [राशि] है और भुगतान के बाद [शेष] होगी।'\n"
+            f"4. जब धन्यवाद कहें: 'धन्यवाद {honorific_hi}, आपका दिन शुभ हो!'\n"
+            "5. अन्य स्थिति को 1 वाक्य में पेशेवर तरीके से संभालें।\n"
             + borrower_info_str
         ),
         "ta-IN": (
             "நீங்கள் வித்யா, தொலைபேசியில் கடன் வசூல் உதவியாளர். "
             "முக்கிய விதிகள்:\n"
-            "- தமிழில் பதிலளிக்கவும். 1-2 குறுகிய வாக்கியங்களில் (அதிகபட்சம் 25 வார்த்தைகள்) பதிலளிக்கவும்.\n"
+            "- தமிழில் பதிலளிக்கவும். 1-2 குறுகிய வாக்கியங்களில் பதிலளிக்கவும்.\n"
             "- ஏற்கனவே கூறியதை மீண்டும் கூறாதீர்கள்.\n"
-            f"- கடன் வாங்கியவரை '{honorific_ta}' என்று அழையுங்கள் (பாலினத்தின் அடிப்படையில்).\n"
-            "- உங்களிடம் ஏற்கனவே உள்ள தகவல்களை (தொகை, பெயர், தேதிகள்) ஒருபோதும் கேட்காதீர்கள்.\n"
+            f"- கடன் வாங்கியவரை '{honorific_ta}' என்று அழையுங்கள்.\n"
+            "- ஏற்கனவே உள்ள தகவல்களை கேட்காதீர்கள்.\n"
+            f"- {tone['ta']}\n"
+            f"- கடன் வாங்கியவரின் கணக்கு நிலை: {acstatus}. செலுத்த வேண்டிய தேதி ஏற்கனவே கடந்துவிட்டது.\n"
             "\nஉரையாடல் வரிசை:\n"
-            "1. வாழ்த்து (ஏற்கனவே செய்யப்பட்டது): 'வணக்கம் திரு/திருமதி [பெயர்], நலமாக இருப்பீர்கள் என நம்புகிறேன். கடன் பிரிவிலிருந்து அழைக்கிறோம், நீங்கள் பெற்ற கடன் தொகை குறித்த வழக்கமான பின்தொடர் அழைப்பு. உங்கள் செலுத்த வேண்டிய தேதி வரவிருக்கிறது [தேதி]. நிலுவைத் தொகையை due date-க்கு முன் செலுத்துவீர்களா?'\n"
-            f"2. கடன் வாங்கியவர் செலுத்துவதாக உறுதியளித்தால்: 'நல்லது {honorific_ta}, நாங்கள் எங்கள் பதிவுகளை அதற்கேற்ப புதுப்பிப்போம். உங்களுக்கு ஏதாவது கேள்விகள் உள்ளதா?'\n"
-            f"3. கடன் தொகை குறித்து கேட்டால்: 'நிச்சயமாக {honorific_ta}, உங்கள் தற்போதைய கடன் நிலுவை [தொகை] மற்றும் இந்த மாத கட்டணத்திற்குப் பிறகு உங்கள் கடன் நிலுவை [மீதமுள்ள] ஆகும்.'\n"
-            f"4. நன்றி சொல்லும்போது அல்லது கேள்விகள் இல்லை என்றால்: 'நன்றி {honorific_ta}, நல்ல நாள் வாழ்த்துகள்!'\n"
-            "5. பிற சூழ்நிலைகளுக்கு (சர்ச்சை, நீட்டிப்பு, அவமரியாதை) 1 வாக்கியத்தில் தொழில்முறையாக கையாளுங்கள்.\n"
+            "1. வாழ்த்து (ஏற்கனவே செய்யப்பட்டது): தவறவிட்ட தவணை பற்றி தெரிவிக்கவும், கடன் மதிப்பெண் மற்றும் NPA அபாயம் பற்றி எச்சரிக்கவும்.\n"
+            f"2. செலுத்துவதாக உறுதியளித்தால்: 'நல்லது {honorific_ta}, பதிவுகளை புதுப்பிப்போம். கேள்விகள் உள்ளதா?'\n"
+            f"3. கடன் தொகை குறித்து கேட்டால்: 'நிச்சயமாக {honorific_ta}, உங்கள் தற்போதைய நிலுவை [தொகை] மற்றும் கட்டணத்திற்குப் பிறகு [மீதமுள்ள] ஆகும்.'\n"
+            f"4. நன்றி சொல்லும்போது: 'நன்றி {honorific_ta}, நல்ல நாள் வாழ்த்துகள்!'\n"
+            "5. பிற சூழ்நிலைகளை 1 வாக்கியத்தில் தொழில்முறையாக கையாளுங்கள்.\n"
             + borrower_info_str
         )
     }
@@ -1127,13 +1301,13 @@ class ConversationHandler:
                 # 1. Get current borrower to check category
                 from app.table_models.borrowers_table import get_borrower_by_no
                 borrower = await get_borrower_by_no(self.user_id, self.borrower_id)
-                category = borrower.get("Payment_Category", "Consistent") if borrower else "Consistent"
+                category = borrower.get("acstatus", "SMA0") if borrower else "SMA0"
                 
                 # 2. Determine Logic
                 payment_date = ai_analysis.get("payment_date")
                 intent = ai_analysis.get("intent", "No Response")
                 is_mid_call = ai_analysis.get("mid_call", False)
-                borrower_name = borrower.get("BORROWER", "Borrower")
+                borrower_name = borrower.get("h_name", borrower.get("BORROWER", "Borrower"))
                 
                 outcomes = determine_report_outcomes(
                     intent, 

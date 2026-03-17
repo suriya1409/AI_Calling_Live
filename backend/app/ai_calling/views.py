@@ -88,15 +88,16 @@ def normalize_language(language: str) -> str:
 # ============================================================
 
 class BorrowerInfo(BaseModel):
-    NO: str
+    contnr: str
     cell1: str
     preferred_language: str = "en-IN"
+    acstatus: str = "SMA0"
     intent_for_testing: Optional[str] = Field(None, description="Intent for dummy call testing: normal, abusive, threatening, stop_calling, language_switch")
 
 class BulkCallRequest(BaseModel):
     borrowers: List[BorrowerInfo]
     use_dummy_data: bool = True
-    real_call_borrower_ids: List[str] = Field(default_factory=list, description="List of borrower NOs that should use REAL calls (use_dummy_data=False), overriding the global use_dummy_data flag")
+    real_call_borrower_ids: List[str] = Field(default_factory=list, description="List of borrower contnr values that should use REAL calls (use_dummy_data=False), overriding the global use_dummy_data flag")
 
 class SingleCallRequest(BaseModel):
     to_number: str
@@ -384,13 +385,40 @@ DUMMY_CONVERSATIONS = {
 
 
 # ============================================================
+# STATUS-SPECIFIC OPENING MESSAGES (Due date has crossed)
+# ============================================================
+
+STATUS_OPENING_MESSAGES = {
+    "SMA0": {
+        "en-IN": "Hi, hope you are doing well. We are calling from the finance department regarding your loan account. We noticed that your payment which was due has been missed by one month. We want to kindly remind you that timely payments help maintain a good credit score and avoid NPA classification. Could you please let us know when you plan to clear this payment?",
+        "hi-IN": "नमस्ते, आशा है आप अच्छे हैं। हम वित्त विभाग से आपके लोन खाते के बारे में कॉल कर रहे हैं। आपका पिछले महीने का भुगतान नहीं मिला है। समय पर भुगतान आपके क्रेडिट स्कोर को बनाए रखने और NPA से बचने में मदद करता है। कृपया बताएं कि आप भुगतान कब करेंगे?",
+        "ta-IN": "வணக்கம், நலமாக இருப்பீர்கள் என நம்புகிறேன். நிதி பிரிவிலிருந்து உங்கள் கடன் கணக்கு குறித்து அழைக்கிறோம். உங்கள் கடந்த மாத தவணை செலுத்தப்படவில்லை. சரியான நேரத்தில் பணம் செலுத்துவது உங்கள் கடன் மதிப்பெண்ணைப் பாதுகாக்கவும் NPA தவிர்க்கவும் உதவும். நீங்கள் எப்போது பணம் செலுத்த திட்டமிடுகிறீர்கள்?"
+    },
+    "SMA1": {
+        "en-IN": "Hello, we are calling from the finance department regarding your loan account. Your payments have been overdue for two months now. This delay is significantly impacting your credit score and you are at risk of NPA classification. We strongly request you to clear both months' dues. Can you please confirm when you will make the payment?",
+        "hi-IN": "नमस्ते, हम वित्त विभाग से आपके लोन खाते के बारे में कॉल कर रहे हैं। आपका भुगतान दो महीने से बकाया है। यह देरी आपके क्रेडिट स्कोर को काफी प्रभावित कर रही है और आप NPA के जोखिम में हैं। कृपया दोनों महीनों का बकाया जल्द चुकाएं।",
+        "ta-IN": "வணக்கம், நிதி பிரிவிலிருந்து உங்கள் கடன் கணக்கு குறித்து அழைக்கிறோம். உங்கள் தவணை இரண்டு மாதங்களாக நிலுவையில் உள்ளது. இது உங்கள் கடன் மதிப்பெண்ணை கணிசமாக பாதிக்கிறது. இரண்டு மாத நிலுவையை செலுத்துமாறு கேட்டுக்கொள்கிறோம்."
+    },
+    "SMA2": {
+        "en-IN": "Hello, this is an important call from the finance department. Your loan account has three months of pending payments. Your account is on the verge of NPA classification, which will have severe consequences on your credit history and may lead to legal action. We strongly urge you to make immediate payment. Can you tell us your payment plan?",
+        "hi-IN": "नमस्ते, यह वित्त विभाग से एक महत्वपूर्ण कॉल है। आपके लोन खाते में तीन महीने का भुगतान लंबित है। आपका खाता NPA वर्गीकरण के कगार पर है। हम आपसे तत्काल भुगतान करने का अनुरोध करते हैं। कृपया अपनी भुगतान योजना बताएं।",
+        "ta-IN": "வணக்கம், நிதி பிரிவிலிருந்து இது ஒரு முக்கியமான அழைப்பு. உங்கள் கடன் கணக்கில் மூன்று மாதங்களாக தவணை நிலுவையில் உள்ளது. உங்கள் கணக்கு NPA வகைப்பாட்டின் விளிம்பில் உள்ளது. உடனடியாக பணம் செலுத்துமாறு கேட்டுக்கொள்கிறோம்."
+    },
+    "NPA": {
+        "en-IN": "Hello, we are calling from the finance department regarding your loan account which has been classified as NPA - Non-Performing Asset. This has severely impacted your credit score. We urge you to make payment immediately to prevent further escalation including legal proceedings. Please let us know your immediate payment plan.",
+        "hi-IN": "नमस्ते, हम वित्त विभाग से आपके लोन खाते के बारे में कॉल कर रहे हैं जिसे NPA - नॉन-परफॉर्मिंग एसेट वर्गीकृत किया गया है। इससे आपका क्रेडिट स्कोर गंभीर रूप से प्रभावित हो चुका है। कानूनी कार्रवाई से बचने के लिए तुरंत भुगतान करें। कृपया अपनी तत्काल भुगतान योजना बताएं।",
+        "ta-IN": "வணக்கம், உங்கள் கடன் கணக்கு NPA - செயல்படாத சொத்தாக வகைப்படுத்தப்பட்டுள்ளது. இது உங்கள் கடன் மதிப்பெண்ணை கடுமையாக பாதித்துள்ளது. சட்ட நடவடிக்கை தவிர்க்க உடனடியாக பணம் செலுத்துமாறு கேட்டுக்கொள்கிறோம். உங்கள் உடனடி கட்டணத் திட்டத்தை தெரிவிக்கவும்."
+    }
+}
+
+# ============================================================
 # CORE LOGIC
 # ============================================================
 
 # Global semaphore to limit concurrent AI analysis requests (prevent 429)
 ai_semaphore = asyncio.Semaphore(2)
 
-async def create_dummy_call(user_id: str, phone_number: str, language: str, borrower_id: str = None, intent: str = "normal") -> dict:
+async def create_dummy_call(user_id: str, phone_number: str, language: str, borrower_id: str = None, intent: str = "normal", acstatus: str = "SMA0") -> dict:
     """Async helper to generate a dummy call and save to DB using model functions with User Isolation"""
     try:
         call_uuid = f"dummy-{uuid.uuid4()}"
@@ -428,6 +456,14 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             # If this entry has a language_switch marker, update lang_key for subsequent AI entries
             if "language_switch" in entry:
                 lang_key = entry["language_switch"]
+        
+        # Replace first AI message with status-specific opening (due date crossed)
+        if intent_cat == "normal" and acstatus in STATUS_OPENING_MESSAGES:
+            status_msgs = STATUS_OPENING_MESSAGES[acstatus]
+            opening_lang = language if language in status_msgs else "en-IN"
+            opening_msg = status_msgs.get(opening_lang, "")
+            if opening_msg and len(conversation) > 0 and conversation[0]["speaker"] == "AI":
+                conversation[0]["text"] = opening_msg
             
         # Use semaphore to limit global concurrent AI requests
         async with ai_semaphore:
@@ -475,8 +511,8 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             
         # 1. Get current borrower to check category
         borrower_in_db = await get_borrower_by_no(user_id, borrower_id) if borrower_id else None
-        category = borrower_in_db.get("Payment_Category", "Consistent") if borrower_in_db else "Consistent"
-        borrower_name = borrower_in_db.get("BORROWER", "Borrower") if borrower_in_db else f"Borrower {borrower_id}"
+        category = borrower_in_db.get("acstatus", acstatus) if borrower_in_db else acstatus
+        borrower_name = borrower_in_db.get("h_name", borrower_in_db.get("BORROWER", "Borrower")) if borrower_in_db else f"Borrower {borrower_id}"
         
         # 2. Use helper to determine all reporting values
         outcomes = determine_report_outcomes(
@@ -527,9 +563,9 @@ async def process_single_call(user_id: str, borrower: BorrowerInfo, use_dummy_da
     
     for attempt in range(max_attempts):
         if use_dummy_data:
-            res = await create_dummy_call(user_id, borrower.cell1, normalized_language, borrower.NO, borrower.intent_for_testing)
+            res = await create_dummy_call(user_id, borrower.cell1, normalized_language, borrower.contnr, borrower.intent_for_testing, borrower.acstatus)
         else:
-            res = make_outbound_call(user_id, borrower.cell1, normalized_language, borrower.NO)
+            res = make_outbound_call(user_id, borrower.cell1, normalized_language, borrower.contnr)
         
         last_res = res
         
@@ -545,23 +581,23 @@ async def process_single_call(user_id: str, borrower: BorrowerInfo, use_dummy_da
         # Scenario: Duration > 0 (Call picked up)
         if res.get("mid_call"):
             # if mid_call == True -> Stop and schedule follow-up
-            print(f"⚠️ Call for {borrower.NO} cut mid-conversation. Scheduling follow-up.")
+            print(f"⚠️ Call for {borrower.contnr} cut mid-conversation. Scheduling follow-up.")
             break
         else:
             # if mid_call == False -> Processed successfully and break
-            print(f"✅ Call for {borrower.NO} completed successfully on attempt {attempt+1}.")
+            print(f"✅ Call for {borrower.contnr} completed successfully on attempt {attempt+1}.")
             break
             
     # After 3 attempts, if last_res is still unsuccessful (failed to connect all 3 times)
     if not last_res.get("success"):
         email_failure_preview = {
             "to": "Area Manager",
-            "subject": f"Action Required: Multiple Call Failures - Borrower {borrower.NO}",
-            "body": f"Hi Area Manager,\n\nWe attempted to call Borrower (No: {borrower.NO}) 3 times, but all calls failed to connect (Zero duration).\n\nWe are escalating this to the Manual Process for you to initiate manual intervention.\n\nBest regards,\nAI Collection System"
+            "subject": f"Action Required: Multiple Call Failures - Borrower {borrower.contnr}",
+            "body": f"Hi Area Manager,\n\nWe attempted to call Borrower (No: {borrower.contnr}) 3 times, but all calls failed to connect (Zero duration).\n\nWe are escalating this to the Manual Process for you to initiate manual intervention.\n\nBest regards,\nAI Collection System"
         }
         
         # Update borrower status to failed but with escalation
-        await update_borrower(user_id, borrower.NO, {
+        await update_borrower(user_id, borrower.contnr, {
             "call_completed": True,
             "ai_summary": "All call attempts failed to connect (3 retries). Initiating Manual Process.",
             "require_manual_process": True,
@@ -570,7 +606,7 @@ async def process_single_call(user_id: str, borrower: BorrowerInfo, use_dummy_da
         
         return CallResponse(
             success=True, # Mark as 'Success' in terms of processing finished
-            borrower_id=borrower.NO,
+            borrower_id=borrower.contnr,
             ai_analysis={"summary": "All attempts failed."},
             status="Failed pickup",
             next_step_summary="All call attempts failed after 3 tries. Escalating to Manual Process.",
@@ -585,7 +621,7 @@ async def process_single_call(user_id: str, borrower: BorrowerInfo, use_dummy_da
         status=last_res.get("status"),
         to_number=borrower.cell1,
         language=normalized_language,
-        borrower_id=borrower.NO,
+        borrower_id=borrower.contnr,
         is_dummy=use_dummy_data,
         ai_analysis=last_res.get("ai_analysis"),
         conversation=last_res.get("conversation"),
@@ -637,13 +673,13 @@ async def trigger_bulk_calls(request: BulkCallRequest, current_user: dict = Depe
         # Per-borrower use_dummy_data decision:
         # If this borrower's NO is in real_call_borrower_ids → real call (False)
         # Otherwise → use the global flag from the request
-        if has_real_overrides and b.NO in real_call_ids:
+        if has_real_overrides and b.contnr in real_call_ids:
             borrower_use_dummy = False
             has_any_real = True
-            logger.info(f"[BULK CALL] Borrower {b.NO} → REAL call (override)")
+            logger.info(f"[BULK CALL] Borrower {b.contnr} → REAL call (override)")
         else:
             borrower_use_dummy = request.use_dummy_data
-            logger.info(f"[BULK CALL] Borrower {b.NO} → {'DUMMY' if borrower_use_dummy else 'REAL'} call (global)")
+            logger.info(f"[BULK CALL] Borrower {b.contnr} → {'DUMMY' if borrower_use_dummy else 'REAL'} call (global)")
         
         async_tasks.append(process_single_call(user_id, b, borrower_use_dummy, lang))
         
@@ -735,7 +771,7 @@ async def get_borrower_call_status(borrower_no: str, current_user: dict = Depend
     if not borrower:
         raise HTTPException(status_code=404, detail="Borrower not found")
     return {
-        "NO": borrower.get("NO"),
+        "contnr": borrower.get("NO"),
         "call_completed": borrower.get("call_completed", False),
         "call_in_progress": borrower.get("call_in_progress", False),
         "transcript": borrower.get("transcript"),

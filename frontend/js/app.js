@@ -638,8 +638,9 @@ async function handleFileUpload(event) {
         console.log('API Response received successfully');
 
         // Reset call states for new data
-        if (data.detailed_breakdown?.by_due_date_category) {
-            Object.values(data.detailed_breakdown.by_due_date_category).flat().forEach(b => {
+        if (data.detailed_breakdown?.by_sma_category || data.detailed_breakdown?.by_due_date_category) {
+            const categories = data.detailed_breakdown.by_sma_category || data.detailed_breakdown.by_due_date_category;
+            Object.values(categories).flat().forEach(b => {
                 b.call_in_progress = false;
                 b.call_completed = false;
             });
@@ -880,8 +881,8 @@ function createCallDataRow(borrower) {
                     <span class="icon">✨</span> AI Summary
                 </div>
                 <div class="next-steps-title">Next Steps</div>
-                <div class="next-steps-text" id="summary-text-${borrower.NO}">
-                    ${borrower.ai_summary || 'No call summary yet. Initiate a call to get AI insights.'}
+                <div class="ai-summary-preview" id="summary-preview-${borrower.NO}">
+                    ${renderTruncatedSummary(borrower.ai_summary, borrower.NO, borrower.h_name || borrower.BORROWER || 'Borrower', borrower.payment_confirmation)}
                 </div>
                 <div class="summary-actions" style="display: flex; gap: 10px; margin-top: 15px;">
                     <button class="manual-btn" style="display: ${borrower.require_manual_process ? 'block' : 'none'}">Initiate Manual Process</button>
@@ -916,6 +917,19 @@ function createCallDataRow(borrower) {
         manualBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             openManualCallModal(borrower);
+        });
+    }
+
+    // View Summary Button Listener (expanded card)
+    const viewSummaryBtn = wrapper.querySelector('.view-summary-btn');
+    if (viewSummaryBtn) {
+        viewSummaryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openAiSummaryModal(
+                borrower.ai_summary,
+                borrower.h_name || borrower.BORROWER || 'Borrower',
+                borrower.payment_confirmation
+            );
         });
     }
 
@@ -1008,6 +1022,133 @@ async function handleSendEmail() {
 }
 
 
+// ============================================================
+// AI SUMMARY TRUNCATION + VIEW MODAL
+// ============================================================
+
+/**
+ * Render a truncated AI summary (first 4 words) with a "View" button
+ */
+function renderTruncatedSummary(summary, uniqueId, borrowerName, intent) {
+    if (!summary || summary === 'No call summary yet. Initiate a call to get AI insights.') {
+        return `<div class="ai-summary-short" style="color: #9ca3af; font-size: 13px; font-style: italic;">No call summary yet. Initiate a call to get AI insights.</div>`;
+    }
+    if (summary === 'Awaiting call...') {
+        return `<div class="ai-summary-short" style="color: #9ca3af; font-size: 13px; font-style: italic;">Awaiting call...</div>`;
+    }
+
+    // Get first 4 words
+    const words = summary.split(/\s+/);
+    const truncated = words.slice(0, 4).join(' ');
+    const hasMore = words.length > 4;
+
+    return `
+        <div class="ai-summary-truncated-container">
+            <span class="ai-summary-short-text">${truncated}${hasMore ? '...' : ''}</span>
+            ${hasMore ? `<button class="view-summary-btn" data-id="${uniqueId}" data-summary="${encodeURIComponent(summary)}" data-name="${encodeURIComponent(borrowerName)}" data-intent="${encodeURIComponent(intent || '')}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                View
+            </button>` : ''}
+        </div>
+    `;
+}
+
+/**
+ * Open AI Summary Modal showing full detailed summary
+ */
+function openAiSummaryModal(summary, borrowerName, intent) {
+    let modal = document.getElementById('aiSummaryModal');
+    if (!modal) {
+        createAiSummaryModal();
+        modal = document.getElementById('aiSummaryModal');
+    }
+
+    const nameEl = document.getElementById('aiSummaryBorrowerName');
+    const intentEl = document.getElementById('aiSummaryIntentBadge');
+    const textEl = document.getElementById('aiSummaryFullText');
+
+    if (nameEl) nameEl.textContent = borrowerName || 'Borrower';
+
+    // Style intent badge
+    if (intentEl && intent) {
+        intentEl.textContent = intent;
+        intentEl.style.display = 'inline-block';
+
+        // Apply intent-specific colors
+        const intentColors = {
+            'Will Pay': { bg: '#dcfce7', color: '#166534' },
+            'Paid': { bg: '#d1fae5', color: '#065f46' },
+            'Needs Extension': { bg: '#ffedd5', color: '#9a3412' },
+            'Dispute': { bg: '#fee2e2', color: '#991b1b' },
+            'Abusive Language': { bg: '#fef2f2', color: '#991b1b' },
+            'Threatening Language': { bg: '#7f1d1d', color: '#ffffff' },
+            'Stop Calling': { bg: '#4b5563', color: '#ffffff' },
+            'No Response': { bg: '#f3f4f6', color: '#6b7280' }
+        };
+
+        const colorScheme = intentColors[intent] || { bg: '#f3f4f6', color: '#6b7280' };
+        intentEl.style.background = colorScheme.bg;
+        intentEl.style.color = colorScheme.color;
+    } else if (intentEl) {
+        intentEl.style.display = 'none';
+    }
+
+    if (textEl) textEl.textContent = summary || 'No summary available.';
+
+    modal.style.display = 'flex';
+    modal.classList.add('active');
+}
+
+/**
+ * Dynamically create the AI Summary Modal DOM
+ */
+function createAiSummaryModal() {
+    const modal = document.createElement('div');
+    modal.id = 'aiSummaryModal';
+    modal.className = 'ai-summary-modal-overlay';
+    modal.innerHTML = `
+        <div class="ai-summary-modal-container">
+            <div class="ai-summary-modal-header">
+                <div class="ai-summary-modal-title">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #4f46e5;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    <span>AI Summary Report</span>
+                </div>
+                <button class="ai-summary-modal-close" id="closeAiSummaryBtn">&times;</button>
+            </div>
+            <div class="ai-summary-modal-body">
+                <div class="ai-summary-meta-row">
+                    <div class="ai-summary-borrower-label">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #6b7280;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        <span id="aiSummaryBorrowerName">Borrower</span>
+                    </div>
+                    <span class="ai-summary-intent-badge" id="aiSummaryIntentBadge">Will Pay</span>
+                </div>
+                <div class="ai-summary-divider"></div>
+                <div class="ai-summary-full-text" id="aiSummaryFullText">
+                    No summary available.
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Close listeners
+    const closeBtn = document.getElementById('closeAiSummaryBtn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+        });
+    }
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+        }
+    });
+}
+
 // Render transcript bubbles
 function renderTranscript(transcript) {
     if (!transcript || transcript.length === 0) {
@@ -1026,11 +1167,11 @@ async function handleBulkCall() {
     const periodKey = sessionStorage.getItem('current_period_key');
     if (!periodKey || !currentKpiData) return;
 
-    const borrowersList = currentKpiData.detailed_breakdown.by_due_date_category[periodKey] || [];
+    const borrowersList = (currentKpiData.detailed_breakdown.by_sma_category || currentKpiData.detailed_breakdown.by_due_date_category || {})[periodKey] || [];
 
     // Filter selected borrowers
     const selectedIds = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.dataset.id);
-    const borrowers = borrowersList.filter(b => selectedIds.includes(String(b.NO)));
+    const borrowers = borrowersList.filter(b => selectedIds.includes(String(b.NO || b.contnr)));
 
     if (borrowers.length === 0) {
         showNotification('Please select at least one borrower to make a call.', 'warning');
@@ -1077,9 +1218,10 @@ async function handleBulkCall() {
                 }
 
                 return {
-                    NO: String(b.NO || ''),
+                    contnr: String(b.contnr || b.NO || ''),
                     cell1: String(b.cell1 || ''),
                     preferred_language: String(b.preferred_language || 'en-IN'),
+                    acstatus: String(b.acstatus || b.Payment_Category || 'SMA0'),
                     intent_for_testing: intent
                 };
             }),
@@ -1109,7 +1251,7 @@ async function handleBulkCall() {
         // Update local state and UI
         result.results.forEach(res => {
             // Use loose equality (==) to handle string vs number comparison
-            const borrower = borrowers.find(b => b.NO == res.borrower_id);
+            const borrower = borrowers.find(b => (b.NO == res.borrower_id) || (b.contnr == res.borrower_id));
             if (borrower) {
                 console.log(`Updating UI for borrower ${res.borrower_id}`);
                 borrower.call_in_progress = false;
@@ -1203,10 +1345,22 @@ function updateBorrowerRowUI(borrower, data) {
             transcriptEl.innerHTML = renderTranscript(borrower.transcript);
         }
 
-        // Dashboard Summary
-        const summaryEl = document.getElementById(`summary-text-${borrower.NO}`);
-        if (summaryEl) {
-            summaryEl.textContent = borrower.ai_summary;
+        // Dashboard Summary (truncated with View button)
+        const summaryPreviewEl = document.getElementById(`summary-preview-${borrower.NO}`);
+        if (summaryPreviewEl) {
+            summaryPreviewEl.innerHTML = renderTruncatedSummary(
+                borrower.ai_summary, borrower.NO,
+                borrower.h_name || borrower.BORROWER || 'Borrower',
+                borrower.payment_confirmation
+            );
+            // Re-attach view button listener
+            const viewBtn = summaryPreviewEl.querySelector('.view-summary-btn');
+            if (viewBtn) {
+                viewBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openAiSummaryModal(borrower.ai_summary, borrower.h_name || borrower.BORROWER || 'Borrower', borrower.payment_confirmation);
+                });
+            }
         }
 
         // Dashboard Actions
@@ -1290,12 +1444,23 @@ function updateTableRowUI(prefix, borrower, data) {
         followUpEl.innerHTML = renderFollowUpBadges(data.follow_up_date || borrower.follow_up_date);
     }
 
-    // AI Summary Text
-    const summaryTextEl = document.getElementById(`${prefix}-summary-text-${borrower.NO}`);
-    if (summaryTextEl) {
+    // AI Summary Text (truncated with View button)
+    const summaryCellEl = document.getElementById(`${prefix}-summary-cell-${borrower.NO}`);
+    if (summaryCellEl) {
         const summary = data.ai_summary || borrower.ai_summary || 'No summary available.';
-        summaryTextEl.textContent = summary;
-        summaryTextEl.title = summary;
+        summaryCellEl.innerHTML = renderTruncatedSummary(
+            summary, `${prefix}-${borrower.NO}`,
+            borrower.h_name || borrower.BORROWER || 'Borrower',
+            borrower.payment_confirmation
+        );
+        // Re-attach view button listener
+        const viewBtn = summaryCellEl.querySelector('.view-summary-btn');
+        if (viewBtn) {
+            viewBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openAiSummaryModal(summary, borrower.h_name || borrower.BORROWER || 'Borrower', borrower.payment_confirmation);
+            });
+        }
     }
 
     // Category (only for escalation table)
@@ -1520,7 +1685,7 @@ function populateReportsTable() {
 
     // Collect all borrowers from all categories
     const allBorrowers = [];
-    const byDate = currentKpiData.detailed_breakdown.by_due_date_category;
+    const byDate = currentKpiData.detailed_breakdown.by_sma_category || currentKpiData.detailed_breakdown.by_due_date_category;
 
     Object.values(byDate).forEach(borrowersList => {
         if (Array.isArray(borrowersList)) {
@@ -1562,7 +1727,7 @@ function populateEscalationTable() {
 
     // Collect all borrowers and filter for escalations
     const allBorrowers = [];
-    const byDate = currentKpiData.detailed_breakdown.by_due_date_category;
+    const byDate = currentKpiData.detailed_breakdown.by_sma_category || currentKpiData.detailed_breakdown.by_due_date_category;
 
     Object.values(byDate).forEach(borrowersList => {
         if (Array.isArray(borrowersList)) {
@@ -1609,8 +1774,8 @@ function createReportRow(borrower, context = 'report') {
     const paymentConf = isCalled ? (borrower.payment_confirmation || '-') : '-';
     const followUpHTML = isCalled ? renderFollowUpBadges(borrower.follow_up_date) : '-';
     const callFreq = isCalled ? (borrower.call_frequency || '-') : '-';
-    const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    const emi = (borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const amount = (borrower.amtfin || borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const emi = (borrower.emi || borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
     // Style payment confirmation based on intent
     let paymentConfStyle = 'padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 13px; white-space: nowrap; display: inline-block;';
@@ -1628,6 +1793,7 @@ function createReportRow(borrower, context = 'report') {
     const emailPreview = borrower.email_to_manager_preview;
     const hasEmailBtn = emailPreview && Object.keys(emailPreview).length > 0;
     const prefix = context === 'escalation' ? 'esc' : 'report';
+    const borrowerDisplayName = borrower.h_name || borrower.BORROWER || 'Borrower';
 
     row.innerHTML = `
         ${context !== 'escalation' ? `
@@ -1635,8 +1801,8 @@ function createReportRow(borrower, context = 'report') {
         ` : ''}
         <td style="padding: 16px;">
             <div class="borrower-info-cell">
-                <div class="borrower-avatar-mini">${(borrower.BORROWER || 'B').charAt(0)}</div>
-                <div style="font-weight: 700; color: #1f2937; letter-spacing: 0.3px;">${borrower.BORROWER || '-'}</div>
+                <div class="borrower-avatar-mini">${(borrower.h_name || borrower.BORROWER || 'B').charAt(0)}</div>
+                <div style="font-weight: 700; color: #1f2937; letter-spacing: 0.3px;">${borrower.h_name || borrower.BORROWER || '-'}</div>
             </div>
         </td>
         <td style="padding: 16px;">
@@ -1659,7 +1825,7 @@ function createReportRow(borrower, context = 'report') {
         ` : ''}
         <td style="padding: 16px; font-weight: 600; color: #4b5563; line-height: 1.4; font-size: 13px;" id="${prefix}-follow-up-${borrower.NO}">${followUpHTML}</td>
         <td class="report-summary-cell" style="padding: 16px;" id="${prefix}-summary-cell-${borrower.NO}">
-            <div class="report-summary-text" id="${prefix}-summary-text-${borrower.NO}" title="${summaryText}">${summaryText}</div>
+            ${renderTruncatedSummary(summaryText, `${prefix}-${borrower.NO}`, borrowerDisplayName, paymentConf)}
         </td>
         <td style="padding: 16px; min-width: 150px;">
             <div class="report-actions" id="${prefix}-actions-${borrower.NO}">
@@ -1698,6 +1864,17 @@ function createReportRow(borrower, context = 'report') {
             } else {
                 showNotification('No email draft available for this borrower.', 'warning');
             }
+        });
+    }
+
+    // View Summary Button Listener
+    const viewSummaryBtn = row.querySelector('.view-summary-btn');
+    if (viewSummaryBtn) {
+        viewSummaryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const borrowerDisplayName = borrower.h_name || borrower.BORROWER || 'Borrower';
+            const summary = isCalled ? (borrower.ai_summary || 'No summary available.') : 'Awaiting call...';
+            openAiSummaryModal(summary, borrowerDisplayName, borrower.payment_confirmation);
         });
     }
 
@@ -1863,7 +2040,7 @@ function isEscalation(borrower) {
  * Open the Manual Call Modal with borrower details
  */
 function openManualCallModal(borrower) {
-    console.log('Opening Manual Call Modal for:', borrower.BORROWER);
+    console.log('Opening Manual Call Modal for:', borrower.h_name || borrower.BORROWER);
     currentBorrowerId = borrower.NO;
 
     const modal = document.getElementById('manualCallModal');
@@ -1877,16 +2054,16 @@ function openManualCallModal(borrower) {
     if (!modal || !detailsContainer) return;
 
     // 1. Populate details
-    const amount = (borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    const emi = (borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const amount = (borrower.amtfin || borrower.AMOUNT || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const emi = (borrower.emi || borrower.EMI || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
     const phone = borrower.cell1 || borrower.MOBILE || 'N/A';
-    const loanId = borrower.NO || 'N/A';
-    const category = borrower.Payment_Category || 'Normal';
+    const loanId = borrower.contnr || borrower.NO || 'N/A';
+    const category = borrower.acstatus || borrower.Payment_Category || 'Normal';
 
     detailsContainer.innerHTML = `
         <div class="detail-item">
             <span class="detail-label">Borrower Name</span>
-            <span class="detail-value">${borrower.BORROWER}</span>
+            <span class="detail-value">${borrower.h_name || borrower.BORROWER}</span>
         </div>
         <div class="detail-item">
             <span class="detail-label">Phone Number</span>
@@ -1954,7 +2131,7 @@ async function initiateManualCallSimulation(borrower) {
     statusContainer.className = 'status-indicator status-connecting';
     makeCallBtn.disabled = true;
 
-    console.log(`☎️ Starting Manual Audio Bridge to ${borrower.BORROWER}...`);
+    console.log(`☎️ Starting Manual Audio Bridge to ${borrower.h_name || borrower.BORROWER}...`);
 
     try {
         const phone = String(borrower.cell1 || borrower.MOBILE || '');
