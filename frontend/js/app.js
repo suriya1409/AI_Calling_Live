@@ -597,6 +597,8 @@ function showView(viewId) {
         populateReportsTable();
     } else if (viewId === 'escalation') {
         populateEscalationTable();
+    } else if (viewId === 'governance') {
+        loadGovernanceStatus();
     }
 }
 
@@ -1074,21 +1076,22 @@ function openAiSummaryModal(summary, borrowerName, intent) {
         intentEl.textContent = intent;
         intentEl.style.display = 'inline-block';
 
-        // Apply intent-specific colors
-        const intentColors = {
-            'Will Pay': { bg: '#dcfce7', color: '#166534' },
-            'Paid': { bg: '#d1fae5', color: '#065f46' },
-            'Needs Extension': { bg: '#ffedd5', color: '#9a3412' },
-            'Dispute': { bg: '#fee2e2', color: '#991b1b' },
-            'Abusive Language': { bg: '#fef2f2', color: '#991b1b' },
-            'Threatening Language': { bg: '#7f1d1d', color: '#ffffff' },
-            'Stop Calling': { bg: '#4b5563', color: '#ffffff' },
-            'No Response': { bg: '#f3f4f6', color: '#6b7280' }
-        };
+        // Apply intent-specific colors (case-insensitive)
+        const lIntent = intent.toLowerCase().trim();
+        let bg = '#f3f4f6';
+        let color = '#6b7280';
 
-        const colorScheme = intentColors[intent] || { bg: '#f3f4f6', color: '#6b7280' };
-        intentEl.style.background = colorScheme.bg;
-        intentEl.style.color = colorScheme.color;
+        if (lIntent === 'will pay') { bg = '#dcfce7'; color = '#166534'; }
+        else if (lIntent === 'paid') { bg = '#d1fae5'; color = '#065f46'; }
+        else if (lIntent === 'needs extension') { bg = '#ffedd5'; color = '#9a3412'; }
+        else if (lIntent === 'dispute') { bg = '#fee2e2'; color = '#991b1b'; }
+        else if (lIntent === 'abusive language') { bg = '#fef2f2'; color = '#991b1b'; }
+        else if (lIntent === 'threatening language') { bg = '#7f1d1d'; color = '#ffffff'; }
+        else if (lIntent === 'stop calling') { bg = '#4b5563'; color = '#ffffff'; }
+        else if (lIntent === 'no response') { bg = '#f3f4f6'; color = '#6b7280'; }
+
+        intentEl.style.background = bg;
+        intentEl.style.color = color;
     } else if (intentEl) {
         intentEl.style.display = 'none';
     }
@@ -1239,6 +1242,19 @@ async function handleBulkCall() {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
+            // ── RBI CALLING HOURS 403 HANDLER ──
+            if (response.status === 403) {
+                showNotification(
+                    errorData.detail || '⛔ Cannot initiate call: Outside allowed calling window',
+                    'error'
+                );
+                // Reset all "calling" spinners
+                borrowers.forEach(b => {
+                    b.call_in_progress = false;
+                    updateBorrowerRowUI(b);
+                });
+                return;
+            }
             throw new Error(errorData.detail || 'Bulk call request failed');
         }
 
@@ -1258,9 +1274,9 @@ async function handleBulkCall() {
                 borrower.call_completed = res.success;
                 borrower.ai_summary = res.next_step_summary || (res.ai_analysis ? res.ai_analysis.summary : (res.success ? 'Call completed.' : 'Call failed: ' + res.error));
                 borrower.transcript = res.conversation || [];
-                borrower.payment_confirmation = res.payment_confirmation || borrower.payment_confirmation;
-                borrower.follow_up_date = res.follow_up_date || borrower.follow_up_date;
-                borrower.call_frequency = res.call_frequency || borrower.call_frequency;
+                borrower.payment_confirmation = (res.payment_confirmation != null) ? res.payment_confirmation : borrower.payment_confirmation;
+                borrower.follow_up_date = (res.follow_up_date != null) ? res.follow_up_date : borrower.follow_up_date;
+                borrower.call_frequency = (res.call_frequency != null) ? res.call_frequency : borrower.call_frequency;
                 borrower.email_to_manager_preview = res.email_to_manager_preview;
                 borrower.require_manual_process = res.require_manual_process;
 
@@ -1320,7 +1336,7 @@ async function handleBulkCall() {
 /**
  * Update the borrower's row UI with call result data
  */
-function updateBorrowerRowUI(borrower, data) {
+function updateBorrowerRowUI(borrower, data = {}) {
     // 1. Update DASHBOARD Summary Details Row
     const row = document.getElementById(`row-${borrower.NO}`);
     if (row) {
@@ -1604,14 +1620,20 @@ function showLoading(show) {
     spinner.style.display = show ? 'flex' : 'none';
 }
 
-// Show notification (basic version)
+// Show notification (toast)
 function showNotification(message, type = 'info') {
-    // You can enhance this with a proper toast notification library
     const styles = {
         success: 'background: #10b981; color: white;',
-        error: 'background: #ef4444; color: white;',
+        error: 'background: #dc2626; color: white;',
         warning: 'background: #f59e0b; color: white;',
         info: 'background: #3b82f6; color: white;'
+    };
+
+    const icons = {
+        success: '✅',
+        error: '⛔',
+        warning: '⚠️',
+        info: 'ℹ️'
     };
 
     const notification = document.createElement('div');
@@ -1619,10 +1641,14 @@ function showNotification(message, type = 'info') {
         position: fixed;
         top: 20px;
         right: 20px;
-        padding: 16px 24px;
-        border-radius: 12px;
+        max-width: 420px;
+        padding: 16px 20px;
+        border-radius: 14px;
         font-weight: 600;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        font-size: 14px;
+        line-height: 1.5;
+        word-wrap: break-word;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
         z-index: 3000;
         animation: slideInRight 0.3s ease;
         ${styles[type] || styles.info}
@@ -1631,10 +1657,11 @@ function showNotification(message, type = 'info') {
 
     document.body.appendChild(notification);
 
+    const duration = type === 'error' ? 5000 : 3000;
     setTimeout(() => {
         notification.style.animation = 'slideOutRight 0.3s ease';
         setTimeout(() => notification.remove(), 300);
-    }, 3000);
+    }, duration);
 }
 
 // Add animation styles
@@ -1938,31 +1965,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Helper functions for intent styling
+// Helper functions for intent styling (Case-insensitive)
 function getIntentBg(intent) {
-    switch (intent) {
-        case 'Paid': return '#d1fae5';
-        case 'Will Pay': return '#dcfce7';
-        case 'Needs Extension': return '#fed7aa';
-        case 'Dispute': return '#fee2e2';
-        case 'No Response': return '#e5e7eb';
-        case 'Abusive Language': return '#fef2f2';
-        case 'Threatening Language': return '#7f1d1d';
-        case 'Stop Calling': return '#4b5563';
+    if (!intent) return '#f3f4f6';
+    const lIntent = intent.toLowerCase().trim();
+    switch (lIntent) {
+        case 'paid': return '#d1fae5';
+        case 'will pay': return '#dcfce7';
+        case 'needs extension': return '#fed7aa';
+        case 'dispute': return '#fee2e2';
+        case 'no response': return '#e5e7eb';
+        case 'abusive language': return '#fef2f2';
+        case 'threatening language': return '#7f1d1d';
+        case 'stop calling': return '#4b5563';
         default: return '#f3f4f6';
     }
 }
 
 function getIntentColor(intent) {
-    switch (intent) {
-        case 'Paid': return '#065f46';
-        case 'Will Pay': return '#166534';
-        case 'Needs Extension': return '#9a3412';
-        case 'Dispute': return '#991b1b';
-        case 'No Response': return '#6b7280';
-        case 'Abusive Language': return '#991b1b';
-        case 'Threatening Language': return '#ffffff';
-        case 'Stop Calling': return '#ffffff';
+    if (!intent) return '#9ca3af';
+    const lIntent = intent.toLowerCase().trim();
+    switch (lIntent) {
+        case 'paid': return '#065f46';
+        case 'will pay': return '#166534';
+        case 'needs_extension': return '#9a3412';
+        case 'dispute': return '#991b1b';
+        case 'no response': return '#6b7280';
+        case 'abusive language': return '#991b1b';
+        case 'threatening language': return '#ffffff';
+        case 'stop calling': return '#ffffff';
         default: return '#9ca3af';
     }
 }
@@ -2286,3 +2317,246 @@ function stopManualAudioBridge() {
 }
 
 // Remove the redundant listener at the bottom
+
+// ================================================================
+// GOVERNANCE — RBI Calling Hours & Slot Management
+// ================================================================
+
+let selectedSlotId = null;
+
+async function loadGovernanceStatus() {
+    try {
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/governance/calling_hours_status`);
+        if (!response.ok) throw new Error('Failed to load governance status');
+        const status = await response.json();
+
+        // Update status indicator
+        const indicator = document.getElementById('rbiStatusIndicator');
+        const badge = document.getElementById('rbiStatusBadge');
+        if (status.is_within_calling_hours) {
+            indicator.style.background = '#22c55e';
+            indicator.style.boxShadow = '0 0 8px rgba(34,197,94,0.5)';
+            badge.textContent = 'Window Open';
+            badge.style.background = '#dcfce7';
+            badge.style.color = '#166534';
+        } else {
+            indicator.style.background = '#ef4444';
+            indicator.style.boxShadow = '0 0 8px rgba(239,68,68,0.5)';
+            badge.textContent = 'Window Closed';
+            badge.style.background = '#fee2e2';
+            badge.style.color = '#991b1b';
+        }
+
+        // Update info cards
+        document.getElementById('govCurrentTime').textContent = status.current_time_ist;
+        document.getElementById('govWindowLabel').textContent = status.calling_window.label;
+        document.getElementById('govRemainingMin').textContent =
+            status.is_within_calling_hours ? `${status.remaining_minutes} min` : 'Closed';
+
+        // Update dropdowns to reflect current config
+        const startSelect = document.getElementById('govStartHour');
+        const endSelect = document.getElementById('govEndHour');
+        if (startSelect) startSelect.value = status.calling_window.start.split(':')[0];
+        if (endSelect) endSelect.value = status.calling_window.end.split(':')[0];
+
+        // Restore selected slot from backend
+        if (status.selected_slot) {
+            selectedSlotId = status.selected_slot.slot_id;
+            const infoBox = document.getElementById('selectedSlotInfo');
+            const labelSpan = document.getElementById('selectedSlotLabel');
+            if (infoBox) infoBox.style.display = 'block';
+            if (labelSpan) labelSpan.textContent = status.selected_slot.label;
+        } else {
+            selectedSlotId = null;
+            const infoBox = document.getElementById('selectedSlotInfo');
+            if (infoBox) infoBox.style.display = 'none';
+        }
+
+        // Load slots
+        await loadTimeSlots();
+    } catch (err) {
+        console.error('Governance status error:', err);
+    }
+}
+
+async function loadTimeSlots() {
+    try {
+        const response = await makeAuthenticatedRequest(`${API_BASE_URL}/governance/time_slots`);
+        if (!response.ok) throw new Error('Failed to load time slots');
+        const data = await response.json();
+
+        const grid = document.getElementById('slotGrid');
+        if (!grid) return;
+
+        // Use backend's selected_slot as source of truth
+        if (data.selected_slot) {
+            selectedSlotId = data.selected_slot.slot_id;
+        }
+
+        grid.innerHTML = data.slots.map(slot => {
+            let bgColor, textColor, border, cursor, opacity;
+            if (slot.status === 'past') {
+                bgColor = '#f1f5f9'; textColor = '#94a3b8'; border = '1px solid #e2e8f0';
+                cursor = 'not-allowed'; opacity = '0.6';
+            } else if (slot.status === 'current') {
+                bgColor = 'linear-gradient(135deg, #bbf7d0, #86efac)'; textColor = '#166534';
+                border = '2px solid #22c55e'; cursor = 'pointer'; opacity = '1';
+            } else {
+                bgColor = '#ffffff'; textColor = '#1e293b';
+                border = '1px solid #e2e8f0'; cursor = 'pointer'; opacity = '1';
+            }
+
+            // Highlight selected slot with purple gradient
+            if (slot.is_selected) {
+                bgColor = 'linear-gradient(135deg, #667eea, #764ba2)';
+                textColor = '#ffffff';
+                border = '2px solid #667eea';
+            }
+
+            return `
+                <div class="slot-card" data-slot-id="${slot.id}" data-slot-label="${slot.label}"
+                     data-slot-status="${slot.status}" data-start-hour="${slot.start_hour}" data-end-hour="${slot.end_hour}"
+                     style="background: ${bgColor}; color: ${textColor}; border: ${border};
+                            border-radius: 12px; padding: 16px; text-align: center;
+                            cursor: ${cursor}; opacity: ${opacity}; transition: all 0.2s ease;
+                            ${slot.status !== 'past' ? 'box-shadow: 0 2px 8px rgba(0,0,0,0.06);' : ''}">
+                    <div style="font-size: 14px; font-weight: 700; margin-bottom: 4px;">${slot.label}</div>
+                    <div style="font-size: 11px; font-weight: 500; opacity: 0.8; text-transform: uppercase;">
+                        ${slot.is_selected ? '🔒 Selected' : slot.status === 'current' ? '🟢 Active Now' : slot.status === 'past' ? '⏰ Passed' : '📅 Available'}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Slot click handlers
+        grid.querySelectorAll('.slot-card').forEach(card => {
+            card.addEventListener('click', async () => {
+                const slotStatus = card.dataset.slotStatus;
+                if (slotStatus === 'past') return;
+
+                const slotId = card.dataset.slotId;
+                const label = card.dataset.slotLabel;
+                const startHour = parseInt(card.dataset.startHour);
+                const endHour = parseInt(card.dataset.endHour);
+
+                // POST slot selection to backend for enforcement
+                try {
+                    const resp = await makeAuthenticatedRequest(`${API_BASE_URL}/governance/select_slot`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            slot_id: slotId,
+                            start_hour: startHour,
+                            end_hour: endHour,
+                            label: label
+                        })
+                    });
+
+                    if (!resp.ok) {
+                        const errData = await resp.json().catch(() => ({}));
+                        throw new Error(errData.detail || 'Failed to select slot');
+                    }
+
+                    const result = await resp.json();
+                    selectedSlotId = slotId;
+
+                    // Update selection info bar
+                    const infoBox = document.getElementById('selectedSlotInfo');
+                    const labelSpan = document.getElementById('selectedSlotLabel');
+                    if (infoBox) infoBox.style.display = 'block';
+                    if (labelSpan) labelSpan.textContent = label;
+
+                    showNotification(result.message, 'success');
+
+                    // Re-render slots to update visual state
+                    await loadTimeSlots();
+                } catch (err) {
+                    showNotification('Failed to select slot: ' + err.message, 'error');
+                }
+            });
+
+            // Hover effects for non-past slots
+            if (card.dataset.slotStatus !== 'past') {
+                card.addEventListener('mouseenter', () => {
+                    if (card.dataset.slotId !== selectedSlotId) {
+                        card.style.transform = 'translateY(-2px)';
+                        card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
+                    }
+                });
+                card.addEventListener('mouseleave', () => {
+                    card.style.transform = '';
+                    card.style.boxShadow = '';
+                });
+            }
+        });
+    } catch (err) {
+        console.error('Time slots error:', err);
+    }
+}
+
+function setupGovernanceListeners() {
+    // Update calling hours button
+    const updateBtn = document.getElementById('updateCallingHoursBtn');
+    if (updateBtn) {
+        updateBtn.addEventListener('click', async () => {
+            const startHour = parseInt(document.getElementById('govStartHour').value);
+            const endHour = parseInt(document.getElementById('govEndHour').value);
+
+            if (startHour >= endHour) {
+                showNotification('Start time must be before end time', 'error');
+                return;
+            }
+
+            try {
+                const response = await makeAuthenticatedRequest(`${API_BASE_URL}/governance/update_calling_hours`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start_hour: startHour, end_hour: endHour })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Failed to update');
+                }
+
+                const result = await response.json();
+                showNotification(result.message, 'success');
+                await loadGovernanceStatus();
+            } catch (err) {
+                showNotification('Failed to update calling hours: ' + err.message, 'error');
+            }
+        });
+    }
+
+    // Clear slot button
+    const clearBtn = document.getElementById('clearSlotBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', async () => {
+            try {
+                const response = await makeAuthenticatedRequest(`${API_BASE_URL}/governance/clear_slot`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) throw new Error('Failed to clear slot');
+
+                const result = await response.json();
+                selectedSlotId = null;
+
+                const infoBox = document.getElementById('selectedSlotInfo');
+                if (infoBox) infoBox.style.display = 'none';
+
+                showNotification(result.message, 'success');
+                await loadTimeSlots();
+            } catch (err) {
+                showNotification('Failed to clear slot: ' + err.message, 'error');
+            }
+        });
+    }
+}
+
+// Initialize governance listeners after DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    setupGovernanceListeners();
+});
+

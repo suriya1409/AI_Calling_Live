@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.data_ingestion.views import router as data_ingestion_router
 from app.ai_calling.views import router as ai_calling_router
 from app.auth.views import router as auth_router
+from app.governance.views import router as governance_router
 
 app = FastAPI(
     title="AIaaS Finance Platform",
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(ai_calling_router, prefix="/ai_calling", tags=["AI Calling"])
 app.include_router(data_ingestion_router, prefix="/data_ingestion", tags=["Data Ingestion"])
+app.include_router(governance_router, prefix="/governance", tags=["Governance"])
 
 
 @app.get("/", tags=["Health"])

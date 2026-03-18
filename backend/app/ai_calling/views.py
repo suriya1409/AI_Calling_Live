@@ -145,10 +145,10 @@ class BulkCallResponse(BaseModel):
 # ============================================================
 
 DUMMY_CONVERSATIONS = {
-    "normal": {
+    "normal_sma0": {
         "en-IN": [
-            {"speaker": "AI", "text": "Hi Mr Rajesh, hope you are doing well today. We are calling from the Loan sector, this is a general check-up call regarding the Loan amount that you have borrowed. Your due date is coming up soon on March 5th 2026. Can you please let us know if you will be paying the balance amount before the due date?"},
-            {"speaker": "User", "text": "Hi, yes I will be paying the amount before the due date."},
+            {"speaker": "AI", "text": "Hi Mr Rajesh, hope you are doing well. We would like to inform you that your payment for this month is still pending. Kindly note that delays in payment may impact your CIBIL score and could lead to further account classification issues. We request you to please clear the due amount at the earliest or let us know a convenient time for payment."},
+            {"speaker": "User", "text": "Hi, yes I will be paying the amount soon."},
             {"speaker": "AI", "text": "Good to know sir, we will update our records accordingly. Do you have any questions for us?"},
             {"speaker": "User", "text": "Yes could you please let me know what my current loan due amount is and after the payment for this month how much it would be totally?"},
             {"speaker": "AI", "text": "Sure sir, your current outstanding loan amount is ₹50,000 and after payment of the due this month your loan amount would be ₹45,000."},
@@ -156,8 +156,8 @@ DUMMY_CONVERSATIONS = {
             {"speaker": "AI", "text": "Thank you sir, have a good day!"}
         ],
         "hi-IN": [
-            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, आशा है आप अच्छे हैं। हम लोन सेक्टर से कॉल कर रहे हैं, यह आपके उधार लिए गए लोन के बारे में एक सामान्य फॉलो-अप कॉल है। आपकी ड्यू डेट जल्द आ रही है 5 मार्च 2026। क्या आप ड्यू डेट से पहले बकाया राशि का भुगतान कर देंगे?"},
-            {"speaker": "User", "text": "हां, मैं ड्यू डेट से पहले भुगतान कर दूंगा।"},
+            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, आशा है आप अच्छे हैं। हम आपको सूचित करना चाहते हैं कि इस महीने का आपका भुगतान अभी भी लंबित है। कृपया ध्यान दें कि भुगतान में देरी आपके CIBIL स्कोर को प्रभावित कर सकती है और खाता वर्गीकरण संबंधी समस्याएं उत्पन्न हो सकती हैं। कृपया जल्द से जल्द बकाया राशि का भुगतान करें या भुगतान के लिए सुविधाजनक समय बताएं।"},
+            {"speaker": "User", "text": "हां, मैं जल्द ही भुगतान कर दूंगा।"},
             {"speaker": "AI", "text": "यह सुनकर अच्छा लगा श्रीमान, हम अपने रिकॉर्ड अपडेट कर देंगे। क्या आपका कोई सवाल है?"},
             {"speaker": "User", "text": "हां, कृपया बताइए कि मेरी वर्तमान लोन बकाया राशि कितनी है और इस महीने के भुगतान के बाद कुल कितनी रहेगी?"},
             {"speaker": "AI", "text": "जी श्रीमान, आपकी वर्तमान कुल बकाया लोन राशि ₹50,000 है और इस महीने के भुगतान के बाद आपकी बकाया राशि ₹45,000 होगी।"},
@@ -165,11 +165,127 @@ DUMMY_CONVERSATIONS = {
             {"speaker": "AI", "text": "धन्यवाद श्रीमान, आपका दिन शुभ हो!"}
         ],
         "ta-IN": [
-            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடன் பிரிவிலிருந்து அழைக்கிறோம், நீங்கள் பெற்ற கடன் தொகை குறித்த வழக்கமான பின்தொடர் அழைப்பு. உங்கள் செலுத்த வேண்டிய தேதி விரைவில் வரவிருக்கிறது மார்ச் 5, 2026. நிலுவைத் தொகையை ட்யூ டேட்-க்கு முன் செலுத்துவீர்களா?"},
-            {"speaker": "User", "text": "ஆமாம், நான் ட்யூ டேட்-க்கு முன் தொகையை செலுத்துவேன்."},
+            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், நலமாக இருப்பீர்கள் என நம்புகிறேன். இந்த மாதத்திற்கான உங்கள் கட்டணம் இன்னும் நிலுவையில் உள்ளது என்பதைத் தெரிவிக்க விரும்புகிறோம். கட்டணத்தில் தாமதம் உங்கள் CIBIL மதிப்பெண்ணை பாதிக்கலாம் மற்றும் கணக்கு வகைப்பாடு சிக்கல்களுக்கு வழிவகுக்கலாம். தயவுசெய்து விரைவில் நிலுவைத் தொகையை செலுத்துங்கள் அல்லது பணம் செலுத்த வசதியான நேரத்தைத் தெரிவியுங்கள்."},
+            {"speaker": "User", "text": "ஆமாம், நான் விரைவில் தொகையை செலுத்துவேன்."},
             {"speaker": "AI", "text": "நல்லது ஐயா, நாங்கள் எங்கள் பதிவுகளை அதற்கேற்ப புதுப்பிப்போம். உங்களுக்கு ஏதாவது கேள்விகள் உள்ளதா?"},
             {"speaker": "User", "text": "ஆமாம், என் தற்போதைய கடன் நிலுவை தொகை என்ன மற்றும் இந்த மாத கட்டணத்திற்குப் பிறகு மொத்தமாக எவ்வளவு இருக்கும் என்று கூற முடியுமா?"},
             {"speaker": "AI", "text": "நிச்சயமாக ஐயா, உங்கள் தற்போதைய கடன் நிலுவை ₹50,000 மற்றும் இந்த மாத கட்டணத்திற்குப் பிறகு உங்கள் கடன் நிலுவை ₹45,000 ஆகும்."},
+            {"speaker": "User", "text": "தகவலுக்கு நன்றி."},
+            {"speaker": "AI", "text": "நன்றி ஐயா, நல்ல நாள் வாழ்த்துகள்!"}
+        ]
+    },
+    "normal_sma1": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hi Mr Rajesh, hope you are doing well. Our records indicate that your loan payments for the past two months are pending. This has already started affecting your CIBIL score and may lead to your account being classified as NPA if not addressed promptly. We strongly request you to clear the outstanding dues for both months at the earliest and share a confirmed payment timeline."},
+            {"speaker": "User", "text": "Yes, I understand. I will pay both months' dues by next week."},
+            {"speaker": "AI", "text": "Thank you sir, we will note down your commitment. Could you confirm the exact date?"},
+            {"speaker": "User", "text": "I will pay by March 25th 2026."},
+            {"speaker": "AI", "text": "Noted sir. We will follow up after March 25th. Do you have any questions?"},
+            {"speaker": "User", "text": "No, that's all."},
+            {"speaker": "AI", "text": "Thank you sir, have a good day!"}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, आशा है आप अच्छे हैं। हमारे रिकॉर्ड बताते हैं कि पिछले दो महीनों का आपका लोन भुगतान लंबित है। इससे आपका CIBIL स्कोर पहले से प्रभावित होना शुरू हो गया है और यदि जल्दी निपटान नहीं किया गया तो आपका खाता NPA के रूप में वर्गीकृत हो सकता है। हम आपसे दोनों महीनों का बकाया जल्द से जल्द चुकाने और भुगतान की पुष्ट समय सीमा साझा करने का अनुरोध करते हैं।"},
+            {"speaker": "User", "text": "हां, मैं समझता हूँ। मैं अगले हफ्ते तक दोनों महीनों का बकाया चुका दूंगा।"},
+            {"speaker": "AI", "text": "धन्यवाद श्रीमान, हम आपकी प्रतिबद्धता नोट कर लेते हैं। क्या आप सटीक तारीख बता सकते हैं?"},
+            {"speaker": "User", "text": "मैं 25 मार्च 2026 तक भुगतान कर दूंगा।"},
+            {"speaker": "AI", "text": "नोट कर लिया श्रीमान। 25 मार्च के बाद हम फॉलो अप करेंगे। कोई सवाल?"},
+            {"speaker": "User", "text": "नहीं, बस इतना ही।"},
+            {"speaker": "AI", "text": "धन्यवाद श्रीमान, आपका दिन शुभ हो!"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடந்த இரண்டு மாதங்களாக உங்கள் கடன் தவணை நிலுவையில் உள்ளது என எங்கள் பதிவுகள் காட்டுகின்றன. இது ஏற்கனவே உங்கள் CIBIL மதிப்பெண்ணை பாதிக்கத் தொடங்கியுள்ளது, உடனடியாக நிவர்த்தி செய்யாவிட்டால் உங்கள் கணக்கு NPA ஆக வகைப்படுத்தப்படலாம். இரண்டு மாதங்களுக்கான நிலுவையை விரைவில் செலுத்தி, உறுதிப்படுத்தப்பட்ட கட்டண காலவரிசையைப் பகிருமாறு கேட்டுக்கொள்கிறோம்."},
+            {"speaker": "User", "text": "ஆமாம், புரிகிறது. அடுத்த வாரத்திற்குள் இரண்டு மாத நிலுவையையும் செலுத்துவேன்."},
+            {"speaker": "AI", "text": "நன்றி ஐயா, உங்கள் உறுதிமொழியைக் குறித்துக் கொள்கிறோம். சரியான தேதியை உறுதிப்படுத்த முடியுமா?"},
+            {"speaker": "User", "text": "மார்ச் 25, 2026-க்குள் செலுத்துவேன்."},
+            {"speaker": "AI", "text": "குறிப்பு எடுத்துக் கொண்டேன் ஐயா. மார்ச் 25-க்குப் பிறகு பின்தொடர்வோம். கேள்விகள் உள்ளதா?"},
+            {"speaker": "User", "text": "இல்லை, அவ்வளவுதான்."},
+            {"speaker": "AI", "text": "நன்றி ஐயா, நல்ல நாள் வாழ்த்துகள்!"}
+        ]
+    },
+    "normal_sma2": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hi Mr Rajesh, hope you are doing well. We regret to inform you that your loan payments have been overdue for the past three consecutive months. Your account is at high risk of being classified as NPA, and this has already significantly impacted your CIBIL score. If the dues are not cleared immediately, further actions, including legal proceedings, may be initiated. Kindly arrange to clear all outstanding dues at the earliest or share a repayment plan without delay."},
+            {"speaker": "User", "text": "I know, I have been facing some issues. I will arrange the payment soon."},
+            {"speaker": "AI", "text": "Sir, this is very urgent. Can you share a specific date for the payment?"},
+            {"speaker": "User", "text": "Give me until end of this month. I will pay all three months together."},
+            {"speaker": "AI", "text": "Noted sir. We will follow up on March 31st. Please ensure payment to avoid legal action. Any questions?"},
+            {"speaker": "User", "text": "No."},
+            {"speaker": "AI", "text": "Thank you sir, have a good day!"}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, आशा है आप अच्छे हैं। हमें आपको सूचित करते हुए खेद है कि आपके लोन का भुगतान पिछले तीन लगातार महीनों से बकाया है। आपका खाता NPA के रूप में वर्गीकृत होने के उच्च जोखिम में है, और इससे आपके CIBIL स्कोर पर पहले से ही गंभीर प्रभाव पड़ा है। यदि बकाया तुरंत नहीं चुकाया गया, तो कानूनी कार्रवाई सहित आगे की कार्रवाई शुरू की जा सकती है। कृपया जल्द से जल्द सभी बकाया चुकाएं या बिना देरी के पुनर्भुगतान योजना साझा करें।"},
+            {"speaker": "User", "text": "मुझे पता है, मुझे कुछ समस्याएं आ रही हैं। मैं जल्द भुगतान की व्यवस्था करूंगा।"},
+            {"speaker": "AI", "text": "श्रीमान, यह बहुत जरूरी है। क्या आप भुगतान की सटीक तारीख बता सकते हैं?"},
+            {"speaker": "User", "text": "इस महीने के अंत तक का समय दें। मैं तीनों महीनों का एक साथ भुगतान करूंगा।"},
+            {"speaker": "AI", "text": "नोट कर लिया श्रीमान। 31 मार्च को फॉलो अप करेंगे। कानूनी कार्रवाई से बचने के लिए भुगतान सुनिश्चित करें। कोई सवाल?"},
+            {"speaker": "User", "text": "नहीं।"},
+            {"speaker": "AI", "text": "धन्यवाद श्रीमान, आपका दिन शुभ हो!"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடந்த மூன்று தொடர்ச்சியான மாதங்களாக உங்கள் கடன் தவணை நிலுவையில் உள்ளது என்பதை வருத்தத்துடன் தெரிவிக்கிறோம். உங்கள் கணக்கு NPA ஆக வகைப்படுத்தப்படும் அதிக ஆபத்தில் உள்ளது, மேலும் இது ஏற்கனவே உங்கள் CIBIL மதிப்பெண்ணை கணிசமாக பாதித்துள்ளது. நிலுவை உடனடியாக தீர்க்கப்படாவிட்டால், சட்ட நடவடிக்கை உள்ளிட்ட நடவடிக்கைகள் எடுக்கப்படலாம்."},
+            {"speaker": "User", "text": "தெரியும், எனக்கு சில சிக்கல்கள் இருந்தன. விரைவில் பணம் செலுத்த ஏற்பாடு செய்கிறேன்."},
+            {"speaker": "AI", "text": "ஐயா, இது மிகவும் அவசரம். பணம் செலுத்துவதற்கான குறிப்பிட்ட தேதியைப் பகிர முடியுமா?"},
+            {"speaker": "User", "text": "இந்த மாத இறுதி வரை அவகாசம் கொடுங்கள். மூன்று மாதங்களையும் ஒன்றாக செலுத்துவேன்."},
+            {"speaker": "AI", "text": "குறிப்பு எடுத்துக் கொண்டேன் ஐயா. மார்ச் 31 அன்று பின்தொடர்வோம். சட்ட நடவடிக்கை தவிர்க்க பணம் செலுத்துவதை உறுதிசெய்யுங்கள். கேள்விகள் உள்ளதா?"},
+            {"speaker": "User", "text": "இல்லை."},
+            {"speaker": "AI", "text": "நன்றி ஐயா, நல்ல நாள் வாழ்த்துகள்!"}
+        ]
+    },
+    "normal_npa": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hi Mr Rajesh, we would like to inform you that your loan account has now been classified as a Non-Performing Asset (NPA) due to non-payment for more than three months. This has already severely impacted your CIBIL score and may affect your ability to obtain credit in the future. We urge you to make the payment immediately to avoid further escalation, including legal action and field visits. Please confirm your payment plan at the earliest."},
+            {"speaker": "User", "text": "I understand the situation. I will try to arrange the payment."},
+            {"speaker": "AI", "text": "Sir, this requires immediate action. When exactly can you make the payment?"},
+            {"speaker": "User", "text": "I need some time. Maybe by next week I can pay at least one month's amount."},
+            {"speaker": "AI", "text": "Noted sir. We strongly recommend clearing all dues to restore your account status. We will follow up next week. Any questions?"},
+            {"speaker": "User", "text": "No, thank you."},
+            {"speaker": "AI", "text": "Thank you sir, have a good day!"}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, हम आपको सूचित करना चाहते हैं कि तीन महीने से अधिक समय तक भुगतान न करने के कारण आपके लोन खाते को अब NPA के रूप में वर्गीकृत किया गया है। इससे आपके CIBIL स्कोर पर पहले से ही गंभीर प्रभाव पड़ा है और भविष्य में क्रेडिट प्राप्त करने की आपकी क्षमता प्रभावित हो सकती है। हम आपसे कानूनी कार्रवाई और फील्ड विजिट सहित आगे की कार्रवाई से बचने के लिए तुरंत भुगतान करने का आग्रह करते हैं।"},
+            {"speaker": "User", "text": "मैं स्थिति समझता हूँ। मैं भुगतान की व्यवस्था करने की कोशिश करूंगा।"},
+            {"speaker": "AI", "text": "श्रीमान, इसके लिए तुरंत कार्रवाई आवश्यक है। आप ठीक कब भुगतान कर सकते हैं?"},
+            {"speaker": "User", "text": "मुझे कुछ समय चाहिए। शायद अगले हफ्ते तक कम से कम एक महीने की राशि दे सकता हूँ।"},
+            {"speaker": "AI", "text": "नोट कर लिया श्रीमान। हम सभी बकाया चुकाने की दृढ़ता से सिफारिश करते हैं। अगले हफ्ते फॉलो अप करेंगे। कोई सवाल?"},
+            {"speaker": "User", "text": "नहीं, धन्यवाद।"},
+            {"speaker": "AI", "text": "धन्यवाद श्रीमान, आपका दिन शुभ हो!"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், மூன்று மாதங்களுக்கு மேலாக பணம் செலுத்தாததால் உங்கள் கடன் கணக்கு இப்போது NPA ஆக வகைப்படுத்தப்பட்டுள்ளது என்பதைத் தெரிவிக்க விரும்புகிறோம். இது ஏற்கனவே உங்கள் CIBIL மதிப்பெண்ணை கடுமையாக பாதித்துள்ளது மற்றும் எதிர்காலத்தில் கடன் பெறும் திறனை பாதிக்கலாம். சட்ட நடவடிக்கை மற்றும் களப்பணி உள்ளிட்ட தீவிர நடவடிக்கைகளைத் தவிர்க்க உடனடியாக பணம் செலுத்துமாறு கேட்டுக்கொள்கிறோம்."},
+            {"speaker": "User", "text": "நிலைமை புரிகிறது. பணம் செலுத்த ஏற்பாடு செய்ய முயற்சிக்கிறேன்."},
+            {"speaker": "AI", "text": "ஐயா, இதற்கு உடனடி நடவடிக்கை தேவை. எப்போது பணம் செலுத்த முடியும்?"},
+            {"speaker": "User", "text": "எனக்கு கொஞ்சம் நேரம் வேண்டும். அடுத்த வாரத்திற்குள் குறைந்தபட்சம் ஒரு மாத தொகையை செலுத்துவேன்."},
+            {"speaker": "AI", "text": "குறிப்பு எடுத்துக் கொண்டேன் ஐயா. கணக்கு நிலையை மீட்க அனைத்து நிலுவையையும் செலுத்த பரிந்துரைக்கிறோம். அடுத்த வாரம் பின்தொடர்வோம். கேள்விகள் உள்ளதா?"},
+            {"speaker": "User", "text": "இல்லை, நன்றி."},
+            {"speaker": "AI", "text": "நன்றி ஐயா, நல்ல நாள் வாழ்த்துகள்!"}
+        ]
+    },
+    "normal": {
+        "en-IN": [
+            {"speaker": "AI", "text": "Hi Mr Rajesh, hope you are doing well. We would like to inform you that your payment for this month is still pending. Kindly note that delays in payment may impact your CIBIL score and could lead to further account classification issues. We request you to please clear the due amount at the earliest or let us know a convenient time for payment."},
+            {"speaker": "User", "text": "Hi, yes I will be paying the amount soon."},
+            {"speaker": "AI", "text": "Good to know sir, we will update our records accordingly. Do you have any questions for us?"},
+            {"speaker": "User", "text": "Yes could you please let me know what my current loan due amount is and after the payment for this month how much it would be totally?"},
+            {"speaker": "AI", "text": "Sure sir, your current outstanding loan amount is ₹50,000 and after payment of the due this month your loan amount would be ₹45,000."},
+            {"speaker": "User", "text": "Thank you for the information."},
+            {"speaker": "AI", "text": "Thank you sir, have a good day!"}
+        ],
+        "hi-IN": [
+            {"speaker": "AI", "text": "नमस्ते श्री राजेश जी, आशा है आप अच्छे हैं। हम आपको सूचित करना चाहते हैं कि इस महीने का आपका भुगतान अभी भी लंबित है। कृपया ध्यान दें कि भुगतान में देरी आपके CIBIL स्कोर को प्रभावित कर सकती है और खाता वर्गीकरण संबंधी समस्याएं उत्पन्न हो सकती हैं। कृपया जल्द से जल्द बकाया राशि का भुगतान करें या भुगतान के लिए सुविधाजनक समय बताएं।"},
+            {"speaker": "User", "text": "हां, मैं जल्द ही भुगतान कर दूंगा।"},
+            {"speaker": "AI", "text": "यह सुनकर अच्छा लगा श्रीमान, हम अपने रिकॉर्ड अपडेट कर देंगे। क्या आपका कोई सवाल है?"},
+            {"speaker": "User", "text": "हां, कृपया बताइए कि मेरी वर्तमान लोन बकाया राशि कितनी है और इस महीने के भुगतान के बाद कुल कितनी रहेगी?"},
+            {"speaker": "AI", "text": "जी श्रीमान, आपकी वर्तमान कुल बकाया लोन राशि ₹50,000 है और इस महीने के भुगतान के बाद आपकी बकाया राशि ₹45,000 होगी।"},
+            {"speaker": "User", "text": "जानकारी के लिए धन्यवाद।"},
+            {"speaker": "AI", "text": "धन्यवाद श्रीमान, आपका दिन शुभ हो!"}
+        ],
+        "ta-IN": [
+            {"speaker": "AI", "text": "வணக்கம் திரு ராஜேஷ், நலமாக இருப்பீர்கள் என நம்புகிறேன். இந்த மாதத்திற்கான உங்கள் கட்டணம் இன்னும் நிலுவையில் உள்ளது என்பதைத் தெரிவிக்க விரும்புகிறோம். கட்டணத்தில் தாமதம் உங்கள் CIBIL மதிப்பெண்ணை பாதிக்கலாம் மற்றும் கணக்கு வகைப்பாடு சிக்கல்களுக்கு வழிவகுக்கலாம்."},
+            {"speaker": "User", "text": "ஆமாம், நான் விரைவில் தொகையை செலுத்துவேன்."},
+            {"speaker": "AI", "text": "நல்லது ஐயா, நாங்கள் எங்கள் பதிவுகளை அதற்கேற்ப புதுப்பிப்போம். உங்களுக்கு ஏதாவது கேள்விகள் உள்ளதா?"},
+            {"speaker": "User", "text": "ஆமாம், என் தற்போதைய கடன் நிலுவை தொகை என்ன?"},
+            {"speaker": "AI", "text": "நிச்சயமாக ஐயா, உங்கள் தற்போதைய கடன் நிலுவை ₹50,000 மற்றும் இந்த மாத கட்டணத்திற்குப் பிறகு ₹45,000 ஆகும்."},
             {"speaker": "User", "text": "தகவலுக்கு நன்றி."},
             {"speaker": "AI", "text": "நன்றி ஐயா, நல்ல நாள் வாழ்த்துகள்!"}
         ]
@@ -389,24 +505,24 @@ DUMMY_CONVERSATIONS = {
 
 STATUS_OPENING_MESSAGES = {
     "SMA0": {
-        "en-IN": "Hi, hope you are doing well. We are calling from the finance department regarding your loan account. We noticed that your payment which was due has been missed by one month. We want to kindly remind you that timely payments help maintain a good credit score and avoid NPA classification. Could you please let us know when you plan to clear this payment?",
-        "hi-IN": "नमस्ते, आशा है आप अच्छे हैं। हम वित्त विभाग से आपके लोन खाते के बारे में कॉल कर रहे हैं। आपका पिछले महीने का भुगतान नहीं मिला है। समय पर भुगतान आपके क्रेडिट स्कोर को बनाए रखने और NPA से बचने में मदद करता है। कृपया बताएं कि आप भुगतान कब करेंगे?",
-        "ta-IN": "வணக்கம், நலமாக இருப்பீர்கள் என நம்புகிறேன். நிதி பிரிவிலிருந்து உங்கள் கடன் கணக்கு குறித்து அழைக்கிறோம். உங்கள் கடந்த மாத தவணை செலுத்தப்படவில்லை. சரியான நேரத்தில் பணம் செலுத்துவது உங்கள் கடன் மதிப்பெண்ணைப் பாதுகாக்கவும் NPA தவிர்க்கவும் உதவும். நீங்கள் எப்போது பணம் செலுத்த திட்டமிடுகிறீர்கள்?"
+        "en-IN": "Hi, hope you are doing well. We would like to inform you that your payment for the respective month is still pending. Kindly note that delays in payment may impact your CIBIL score and could lead to further account classification issues. We request you to please clear the due amount at the earliest or let us know a convenient time for payment.",
+        "hi-IN": "नमस्ते, आशा है आप अच्छे हैं। हम आपको सूचित करना चाहते हैं कि इस महीने का आपका भुगतान अभी भी लंबित है। कृपया ध्यान दें कि भुगतान में देरी आपके CIBIL स्कोर को प्रभावित कर सकती है और खाता वर्गीकरण संबंधी समस्याएं उत्पन्न हो सकती हैं। कृपया जल्द से जल्द बकाया राशि का भुगतान करें या भुगतान के लिए सुविधाजनक समय बताएं।",
+        "ta-IN": "வணக்கம், நலமாக இருப்பீர்கள் என நம்புகிறேன். இந்த மாதத்திற்கான உங்கள் கட்டணம் இன்னும் நிலுவையில் உள்ளது என்பதைத் தெரிவிக்க விரும்புகிறோம். கட்டணத்தில் தாமதம் உங்கள் CIBIL மதிப்பெண்ணை பாதிக்கலாம் மற்றும் கணக்கு வகைப்பாடு சிக்கல்களுக்கு வழிவகுக்கலாம். தயவுசெய்து விரைவில் நிலுவைத் தொகையை செலுத்துங்கள் அல்லது பணம் செலுத்த வசதியான நேரத்தைத் தெரிவியுங்கள்."
     },
     "SMA1": {
-        "en-IN": "Hello, we are calling from the finance department regarding your loan account. Your payments have been overdue for two months now. This delay is significantly impacting your credit score and you are at risk of NPA classification. We strongly request you to clear both months' dues. Can you please confirm when you will make the payment?",
-        "hi-IN": "नमस्ते, हम वित्त विभाग से आपके लोन खाते के बारे में कॉल कर रहे हैं। आपका भुगतान दो महीने से बकाया है। यह देरी आपके क्रेडिट स्कोर को काफी प्रभावित कर रही है और आप NPA के जोखिम में हैं। कृपया दोनों महीनों का बकाया जल्द चुकाएं।",
-        "ta-IN": "வணக்கம், நிதி பிரிவிலிருந்து உங்கள் கடன் கணக்கு குறித்து அழைக்கிறோம். உங்கள் தவணை இரண்டு மாதங்களாக நிலுவையில் உள்ளது. இது உங்கள் கடன் மதிப்பெண்ணை கணிசமாக பாதிக்கிறது. இரண்டு மாத நிலுவையை செலுத்துமாறு கேட்டுக்கொள்கிறோம்."
+        "en-IN": "Hi, hope you are doing well. Our records indicate that your loan payments for the past two months are pending. This has already started affecting your CIBIL score and may lead to your account being classified as NPA if not addressed promptly. We strongly request you to clear the outstanding dues for both months at the earliest and share a confirmed payment timeline.",
+        "hi-IN": "नमस्ते, आशा है आप अच्छे हैं। हमारे रिकॉर्ड बताते हैं कि पिछले दो महीनों का आपका लोन भुगतान लंबित है। इससे आपका CIBIL स्कोर पहले से प्रभावित होना शुरू हो गया है और यदि जल्दी निपटान नहीं किया गया तो आपका खाता NPA के रूप में वर्गीकृत हो सकता है। हम आपसे दोनों महीनों का बकाया जल्द से जल्द चुकाने और भुगतान की पुष्ट समय सीमा साझा करने का अनुरोध करते हैं।",
+        "ta-IN": "வணக்கம், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடந்த இரண்டு மாதங்களாக உங்கள் கடன் தவணை நிலுவையில் உள்ளது என எங்கள் பதிவுகள் காட்டுகின்றன. இது ஏற்கனவே உங்கள் CIBIL மதிப்பெண்ணை பாதிக்கத் தொடங்கியுள்ளது, உடனடியாக நிவர்த்தி செய்யாவிட்டால் உங்கள் கணக்கு NPA ஆக வகைப்படுத்தப்படலாம். இரண்டு மாதங்களுக்கான நிலுவையை விரைவில் செலுத்தி, உறுதிப்படுத்தப்பட்ட கட்டண காலவரிசையைப் பகிருமாறு கேட்டுக்கொள்கிறோம்."
     },
     "SMA2": {
-        "en-IN": "Hello, this is an important call from the finance department. Your loan account has three months of pending payments. Your account is on the verge of NPA classification, which will have severe consequences on your credit history and may lead to legal action. We strongly urge you to make immediate payment. Can you tell us your payment plan?",
-        "hi-IN": "नमस्ते, यह वित्त विभाग से एक महत्वपूर्ण कॉल है। आपके लोन खाते में तीन महीने का भुगतान लंबित है। आपका खाता NPA वर्गीकरण के कगार पर है। हम आपसे तत्काल भुगतान करने का अनुरोध करते हैं। कृपया अपनी भुगतान योजना बताएं।",
-        "ta-IN": "வணக்கம், நிதி பிரிவிலிருந்து இது ஒரு முக்கியமான அழைப்பு. உங்கள் கடன் கணக்கில் மூன்று மாதங்களாக தவணை நிலுவையில் உள்ளது. உங்கள் கணக்கு NPA வகைப்பாட்டின் விளிம்பில் உள்ளது. உடனடியாக பணம் செலுத்துமாறு கேட்டுக்கொள்கிறோம்."
+        "en-IN": "Hi, hope you are doing well. We regret to inform you that your loan payments have been overdue for the past three consecutive months. Your account is at high risk of being classified as NPA, and this has already significantly impacted your CIBIL score. If the dues are not cleared immediately, further actions, including legal proceedings, may be initiated. Kindly arrange to clear all outstanding dues at the earliest or share a repayment plan without delay.",
+        "hi-IN": "नमस्ते, आशा है आप अच्छे हैं। हमें आपको सूचित करते हुए खेद है कि आपके लोन का भुगतान पिछले तीन लगातार महीनों से बकाया है। आपका खाता NPA के रूप में वर्गीकृत होने के उच्च जोखिम में है, और इससे आपके CIBIL स्कोर पर पहले से ही गंभीर प्रभाव पड़ा है। यदि बकाया तुरंत नहीं चुकाया गया, तो कानूनी कार्रवाई सहित आगे की कार्रवाई शुरू की जा सकती है। कृपया जल्द से जल्द सभी बकाया चुकाएं या बिना देरी के पुनर्भुगतान योजना साझा करें।",
+        "ta-IN": "வணக்கம், நலமாக இருப்பீர்கள் என நம்புகிறேன். கடந்த மூன்று தொடர்ச்சியான மாதங்களாக உங்கள் கடன் தவணை நிலுவையில் உள்ளது என்பதை வருத்தத்துடன் தெரிவிக்கிறோம். உங்கள் கணக்கு NPA ஆக வகைப்படுத்தப்படும் அதிக ஆபத்தில் உள்ளது, மேலும் இது ஏற்கனவே உங்கள் CIBIL மதிப்பெண்ணை கணிசமாக பாதித்துள்ளது. நிலுவை உடனடியாக தீர்க்கப்படாவிட்டால், சட்ட நடவடிக்கை உள்ளிட்ட நடவடிக்கைகள் எடுக்கப்படலாம். தயவுசெய்து விரைவில் அனைத்து நிலுவையையும் செலுத்துங்கள் அல்லது தாமதமின்றி திருப்பிச் செலுத்தும் திட்டத்தைப் பகிருங்கள்."
     },
     "NPA": {
-        "en-IN": "Hello, we are calling from the finance department regarding your loan account which has been classified as NPA - Non-Performing Asset. This has severely impacted your credit score. We urge you to make payment immediately to prevent further escalation including legal proceedings. Please let us know your immediate payment plan.",
-        "hi-IN": "नमस्ते, हम वित्त विभाग से आपके लोन खाते के बारे में कॉल कर रहे हैं जिसे NPA - नॉन-परफॉर्मिंग एसेट वर्गीकृत किया गया है। इससे आपका क्रेडिट स्कोर गंभीर रूप से प्रभावित हो चुका है। कानूनी कार्रवाई से बचने के लिए तुरंत भुगतान करें। कृपया अपनी तत्काल भुगतान योजना बताएं।",
-        "ta-IN": "வணக்கம், உங்கள் கடன் கணக்கு NPA - செயல்படாத சொத்தாக வகைப்படுத்தப்பட்டுள்ளது. இது உங்கள் கடன் மதிப்பெண்ணை கடுமையாக பாதித்துள்ளது. சட்ட நடவடிக்கை தவிர்க்க உடனடியாக பணம் செலுத்துமாறு கேட்டுக்கொள்கிறோம். உங்கள் உடனடி கட்டணத் திட்டத்தை தெரிவிக்கவும்."
+        "en-IN": "Hi, we would like to inform you that your loan account has now been classified as a Non-Performing Asset (NPA) due to non-payment for more than three months. This has already severely impacted your CIBIL score and may affect your ability to obtain credit in the future. We urge you to make the payment immediately to avoid further escalation, including legal action and field visits. Please confirm your payment plan at the earliest.",
+        "hi-IN": "नमस्ते, हम आपको सूचित करना चाहते हैं कि तीन महीने से अधिक समय तक भुगतान न करने के कारण आपके लोन खाते को अब नॉन-परफॉर्मिंग एसेट (NPA) के रूप में वर्गीकृत किया गया है। इससे आपके CIBIL स्कोर पर पहले से ही गंभीर प्रभाव पड़ा है और भविष्य में क्रेडिट प्राप्त करने की आपकी क्षमता प्रभावित हो सकती है। हम आपसे कानूनी कार्रवाई और फील्ड विजिट सहित आगे की कार्रवाई से बचने के लिए तुरंत भुगतान करने का आग्रह करते हैं। कृपया जल्द से जल्द अपनी भुगतान योजना की पुष्टि करें।",
+        "ta-IN": "வணக்கம், மூன்று மாதங்களுக்கு மேலாக பணம் செலுத்தாததால் உங்கள் கடன் கணக்கு இப்போது செயல்படாத சொத்தாக (NPA) வகைப்படுத்தப்பட்டுள்ளது என்பதைத் தெரிவிக்க விரும்புகிறோம். இது ஏற்கனவே உங்கள் CIBIL மதிப்பெண்ணை கடுமையாக பாதித்துள்ளது மற்றும் எதிர்காலத்தில் கடன் பெறும் திறனை பாதிக்கலாம். சட்ட நடவடிக்கை மற்றும் களப்பணி உள்ளிட்ட மேலும் தீவிர நடவடிக்கைகளைத் தவிர்க்க உடனடியாக பணம் செலுத்துமாறு கேட்டுக்கொள்கிறோம். உங்கள் கட்டணத் திட்டத்தை விரைவில் உறுதிப்படுத்தவும்."
     }
 }
 
@@ -423,8 +539,103 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
         call_uuid = f"dummy-{uuid.uuid4()}"
         start_time = datetime.now()
         
-        # Select intent category
-        intent_cat = intent if intent in DUMMY_CONVERSATIONS else "normal"
+        # Fetch borrower name from DB EARLY so we can replace placeholder names in conversation
+        borrower_in_db = await get_borrower_by_no(user_id, borrower_id) if borrower_id else None
+        borrower_name = "Borrower"
+        if borrower_in_db:
+            borrower_name = borrower_in_db.get("h_name", borrower_in_db.get("BORROWER", "Borrower"))
+        elif borrower_id:
+            borrower_name = f"Borrower {borrower_id}"
+        
+        # Determine honorific based on gender
+        from app.ai_calling.service import detect_gender_from_name
+        gender = detect_gender_from_name(borrower_name)
+        honorific_en = "Mrs" if gender == "female" else "Mr"
+        honorific_hi = "श्रीमती" if gender == "female" else "श्री"
+        honorific_ta = "திருமதி" if gender == "female" else "திரு"
+        
+        # Placeholder name mappings to replace in all conversation texts
+        name_replacements = {
+            f"Mr Rajesh": f"{honorific_en} {borrower_name}",
+            f"Mrs Rajesh": f"{honorific_en} {borrower_name}",
+            "श्री राजेश जी": f"{honorific_hi} {borrower_name} जी",
+            "श्री राजेश": f"{honorific_hi} {borrower_name}",
+            "श्रीमती राजेश": f"{honorific_hi} {borrower_name}",
+            "திரு ராஜேஷ்": f"{honorific_ta} {borrower_name}",
+            "திருமதி ராஜேஷ்": f"{honorific_ta} {borrower_name}",
+        }
+        
+        # ── DYNAMIC DATE GENERATION ──
+        # Replace all hardcoded dates in conversations with dates relative to today
+        from calendar import monthrange
+        
+        today = start_time
+        date_5d = today + timedelta(days=5)     # Due date (language_switch)
+        date_7d = today + timedelta(days=7)     # SMA1 payment promise ("next week")
+        date_14d = today + timedelta(days=14)   # Extension request ("two weeks")
+        last_day = monthrange(today.year, today.month)[1]
+        date_eom = today.replace(day=last_day)  # End of month (SMA2)
+        
+        # Month names in each language
+        EN_MONTHS = {1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+                     7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"}
+        HI_MONTHS = {1: "जनवरी", 2: "फरवरी", 3: "मार्च", 4: "अप्रैल", 5: "मई", 6: "जून",
+                     7: "जुलाई", 8: "अगस्त", 9: "सितंबर", 10: "अक्टूबर", 11: "नवंबर", 12: "दिसंबर"}
+        TA_MONTHS = {1: "ஜனவரி", 2: "பிப்ரவரி", 3: "மார்ச்", 4: "ஏப்ரல்", 5: "மே", 6: "ஜூன்",
+                     7: "ஜூலை", 8: "ஆகஸ்ட்", 9: "செப்டம்பர்", 10: "அக்டோபர்", 11: "நவம்பர்", 12: "டிசம்பர்"}
+        
+        def _fmt_en(dt): return f"{EN_MONTHS[dt.month]} {dt.day}, {dt.year}"
+        def _fmt_en_short(dt): return f"{EN_MONTHS[dt.month]} {dt.day}"
+        def _fmt_hi(dt): return f"{dt.day} {HI_MONTHS[dt.month]} {dt.year}"
+        def _fmt_hi_short(dt): return f"{dt.day} {HI_MONTHS[dt.month]}"
+        def _fmt_ta(dt): return f"{TA_MONTHS[dt.month]} {dt.day}, {dt.year}"
+        def _fmt_ta_short(dt): return f"{TA_MONTHS[dt.month]} {dt.day}"
+        
+        # Date replacements: map hardcoded template dates → dynamic dates
+        # Order matters: replace longer strings first to avoid partial matches
+        date_replacements = {
+            # ── SMA1: "March 25th 2026" → 7 days from today ──
+            "March 25th 2026": _fmt_en(date_7d),
+            "March 25th": _fmt_en_short(date_7d),
+            "25 मार्च 2026": _fmt_hi(date_7d),
+            "25 मार्च": _fmt_hi_short(date_7d),
+            "மார்ச் 25, 2026": _fmt_ta(date_7d),
+            "மார்ச் 25": _fmt_ta_short(date_7d),
+            # ── SMA2: "March 31st" → end of current month ──
+            "March 31st": _fmt_en_short(date_eom),
+            "31 मार्च": _fmt_hi_short(date_eom),
+            "மார்ச் 31": _fmt_ta_short(date_eom),
+            # ── needs_extension: "10th March 2026" → 14 days from today ──
+            "10th March 2026": _fmt_en(date_14d),
+            "10th March": _fmt_en_short(date_14d),
+            "10 मार्च 2026": _fmt_hi(date_14d),
+            "10 मार्च": _fmt_hi_short(date_14d),
+            "மார்ச் 10, 2026": _fmt_ta(date_14d),
+            "மார்ச் 10": _fmt_ta_short(date_14d),
+            # ── language_switch: "March 5th 2026" → 5 days from today ──
+            "March 5th 2026": _fmt_en(date_5d),
+            "5 मार्च 2026": _fmt_hi(date_5d),
+            "மார்ச் 5, 2026": _fmt_ta(date_5d),
+        }
+        
+        # Merge date replacements into name_replacements
+        name_replacements.update(date_replacements)
+        
+        # Select intent category - for 'normal' intent, try status-specific version first
+        if intent in DUMMY_CONVERSATIONS:
+            intent_cat = intent
+        elif intent == "normal" or intent is None:
+            # Try status-specific normal conversation (e.g., normal_sma1, normal_npa)
+            status_key = f"normal_{acstatus.lower()}"
+            intent_cat = status_key if status_key in DUMMY_CONVERSATIONS else "normal"
+        else:
+            intent_cat = "normal"
+        
+        # For 'normal' intent with acstatus, prefer the status-specific version
+        if intent_cat == "normal" and acstatus:
+            status_key = f"normal_{acstatus.lower()}"
+            if status_key in DUMMY_CONVERSATIONS:
+                intent_cat = status_key
         
         # SPECIAL CASE: Simulate Failed Pickup (Zero Duration)
         if intent_cat == "failed_pickup":
@@ -446,9 +657,15 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             current_time += timedelta(seconds=random.uniform(2, 5))
             # Track language switches in the conversation
             entry_lang = entry.get("language_switch", lang_key)
+            
+            # Replace placeholder borrower name with actual name
+            entry_text = entry["text"]
+            for placeholder, replacement in name_replacements.items():
+                entry_text = entry_text.replace(placeholder, replacement)
+            
             conversation.append({
                 "speaker": entry["speaker"],
-                "text": entry["text"],
+                "text": entry_text,
                 "timestamp": current_time.isoformat(),
                 "language": entry_lang
             })
@@ -456,8 +673,10 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             if "language_switch" in entry:
                 lang_key = entry["language_switch"]
         
-        # Replace first AI message with status-specific opening (due date crossed)
-        if intent_cat == "normal" and acstatus in STATUS_OPENING_MESSAGES:
+        # Replace first AI message with status-specific opening for ALL intent categories
+        # This ensures abusive, threatening, paid, etc. conversations also start
+        # with the correct SMA0/SMA1/SMA2/NPA tone in all 3 languages
+        if acstatus in STATUS_OPENING_MESSAGES:
             status_msgs = STATUS_OPENING_MESSAGES[acstatus]
             opening_lang = language if language in status_msgs else "en-IN"
             opening_msg = status_msgs.get(opening_lang, "")
@@ -469,11 +688,68 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             # Use Gemini for analysis (Gemini-only mode)
             ai_analysis = await analyze_conversation_with_gemini(conversation)
         
-        # Extract payment information from AI analysis
-        intent = ai_analysis.get("intent", "No Response") if ai_analysis else "No Response"
+        # ── INTENT RESOLUTION FOR DUMMY CALLS ──
+        # For dummy calls, we KNOW the expected intent from intent_for_testing.
+        # Gemini may misclassify (especially Hindi/Tamil conversations), so we
+        # map the test intent to the correct determine_report_outcomes intent value
+        # and use that as the primary source. Gemini analysis is kept for summary/sentiment.
+        INTENT_TEST_TO_REPORT_MAP = {
+            "normal": "Will Pay",
+            "normal_sma0": "Will Pay",
+            "normal_sma1": "Will Pay",
+            "normal_sma2": "Will Pay",
+            "normal_npa": "Will Pay",
+            "abusive": "Abusive Language",
+            "threatening": "Threatening Language",
+            "stop_calling": "Stop Calling",
+            "paid": "Paid",
+            "needs_extension": "Needs Extension",
+            "dispute": "Dispute",
+            "no_response": "No Response",
+            "mid_call": "Will Pay",  # mid_call is handled via is_mid_call flag
+            "language_switch": "Will Pay",
+            "failed_pickup": "No Response",
+        }
+        
+        # Use the mapped intent from test intent (reliable) over Gemini's analysis (may be wrong)
+        gemini_intent = ai_analysis.get("intent", "No Response") if ai_analysis else "No Response"
+        mapped_intent = INTENT_TEST_TO_REPORT_MAP.get(intent_cat, None)
+        
+        if mapped_intent:
+            intent = mapped_intent
+            print(f"[DUMMY] 🎯 Using mapped intent: '{intent_cat}' → '{intent}' (Gemini said: '{gemini_intent}')")
+        else:
+            intent = gemini_intent
+            print(f"[DUMMY] 🤖 Using Gemini intent: '{intent}' (no mapping for '{intent_cat}')")
+        
+        # Override mid_call flag for mid_call test scenario
+        if intent_cat == "mid_call":
+            is_mid_call = True
+        else:
+            is_mid_call = ai_analysis.get("mid_call", False) if ai_analysis else False
+        
         payment_date = ai_analysis.get("payment_date") if ai_analysis else None
         extension_date = ai_analysis.get("extension_date") if ai_analysis else None
-        is_mid_call = ai_analysis.get("mid_call", False) if ai_analysis else False
+        
+        # Validate: payment_date must be today or in the future
+        # EXCEPTION: For "Paid" intent, past dates are valid (borrower claims they already paid)
+        if payment_date and payment_date.lower() != "null" and intent != "Paid":
+            try:
+                pd = datetime.strptime(payment_date, "%Y-%m-%d")
+                if pd.date() < start_time.date():
+                    # Past date detected — auto-correct to 7 days from today
+                    corrected = start_time + timedelta(days=7)
+                    payment_date = corrected.strftime("%Y-%m-%d")
+                    print(f"[DUMMY] ⚠️ Payment date was in the past, corrected to {payment_date}")
+                    if ai_analysis:
+                        ai_analysis["payment_date"] = payment_date
+            except ValueError:
+                pass  # If not a valid date format, let it pass through
+        
+        # Update ai_analysis with the correctly mapped intent for consistent DB storage
+        if ai_analysis:
+            ai_analysis["intent"] = intent
+            ai_analysis["mid_call"] = is_mid_call
         
         transcript_data = {
             "call_uuid": call_uuid,
@@ -500,16 +776,11 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
         email_draft = None
         require_manual_process = False
         
-        # Get borrower details for email (dummy/placeholder if not available)
-        borrower_name = "Borrower"
-        if borrower_id:
-            # We could fetch from DB, but for MVP we use placeholder
-            borrower_name = f"Borrower {borrower_id}"
+        # Get borrower details (already fetched at the top of the function)
+        # borrower_in_db and borrower_name are already available
             
-        # 1. Get current borrower to check category
-        borrower_in_db = await get_borrower_by_no(user_id, borrower_id) if borrower_id else None
+        # 1. Get category from borrower record (reuse borrower_in_db from above)
         category = borrower_in_db.get("acstatus", acstatus) if borrower_in_db else acstatus
-        borrower_name = borrower_in_db.get("h_name", borrower_in_db.get("BORROWER", "Borrower")) if borrower_in_db else f"Borrower {borrower_id}"
         
         # 2. Use helper to determine all reporting values
         outcomes = determine_report_outcomes(
@@ -625,7 +896,10 @@ async def process_single_call(user_id: str, borrower: BorrowerInfo, use_dummy_da
         mid_call=last_res.get("mid_call", False),
         next_step_summary=last_res.get("next_step_summary"),
         email_to_manager_preview=last_res.get("email_to_manager_preview"),
-        require_manual_process=last_res.get("require_manual_process", False)
+        require_manual_process=last_res.get("require_manual_process", False),
+        payment_confirmation=last_res.get("payment_confirmation"),
+        follow_up_date=last_res.get("follow_up_date"),
+        call_frequency=last_res.get("call_frequency")
     )
 
 # ============================================================
@@ -653,8 +927,14 @@ async def trigger_bulk_calls(request: BulkCallRequest, current_user: dict = Depe
     Per-borrower override: If real_call_borrower_ids is provided, borrowers whose
     NO is in that list will use REAL calls (use_dummy_data=False), regardless of
     the global use_dummy_data flag. All other borrowers use the global flag.
+    
+    RBI Compliance: Calls are only allowed between 08:00 AM and 07:00 PM IST.
     """
+    # ── RBI CALLING HOURS + SLOT GUARDRAIL ──
+    from app.governance.views import validate_slot_and_rbi
     user_id = str(current_user["_id"])
+    validate_slot_and_rbi(user_id)
+    
     if not request.borrowers:
         raise HTTPException(status_code=400, detail="No borrowers")
     
@@ -679,9 +959,9 @@ async def trigger_bulk_calls(request: BulkCallRequest, current_user: dict = Depe
             logger.info(f"[BULK CALL] Borrower {b.contnr} → {'DUMMY' if borrower_use_dummy else 'REAL'} call (global)")
         
         async_tasks.append(process_single_call(user_id, b, borrower_use_dummy, lang))
-        # Add a tiny 0.5s delay between starting each call to prevent hitting 'Burst Limits' (QPS)
-        # Even with 2,000 RPM, sending 20 requests in 1ms can trigger a 429.
-        await asyncio.sleep(0.5)
+        # Stagger call creation by 1.5s to avoid burst-triggering Gemini rate limits
+        # Even paid tier has per-second (QPS) limits separate from RPM
+        await asyncio.sleep(1.5)
         
     results = await asyncio.gather(*async_tasks)
     

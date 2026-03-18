@@ -218,11 +218,23 @@ def determine_report_outcomes(intent, payment_date, category, borrower_name="Bor
     next_step_summary = ""
     email_draft = None
     require_manual_process = False
-    payment_confirmation = intent
     today = datetime.now()
     today_str = today.strftime("%Y-%m-%d")
     
     # 1. Handle Dates & Freq
+    escalation_intents = ["Paid", "Dispute", "No Response", "Abusive Language", "Threatening Language", "Stop Calling"]
+    
+    # Priority for payment_confirmation badge:
+    # 1. If it's a known escalation intent, USE that as the badge (Highest Priority)
+    # 2. Otherwise, if there is a specific payment_date, use that as the badge
+    # 3. Default to the intent string
+    if intent in escalation_intents:
+        payment_confirmation = intent
+    elif payment_date and payment_date.lower() != "null":
+        payment_confirmation = payment_date
+    else:
+        payment_confirmation = intent
+
     if is_mid_call:
         # Re-trigger Next Day
         next_day = today + timedelta(days=1)
@@ -236,7 +248,7 @@ def determine_report_outcomes(intent, payment_date, category, borrower_name="Bor
             f"Finance team needs to re-trigger the call on {follow_up_date}."
         )
     elif payment_date and payment_date.lower() != "null":
-        payment_confirmation = payment_date
+        # Note: payment_confirmation already set to payment_date above
         follow_up_date = payment_date
         call_frequency = "1 call (Verify)"
     else:
@@ -249,8 +261,6 @@ def determine_report_outcomes(intent, payment_date, category, borrower_name="Bor
     # Helper: build follow-up dates string
     follow_up_dates_list = follow_up_date.split(", ") if follow_up_date else []
     follow_up_dates_display = ", ".join(follow_up_dates_list) if follow_up_dates_list else "N/A"
-
-    escalation_intents = ["Paid", "Dispute", "No Response", "Abusive Language", "Threatening Language", "Stop Calling"]
 
     if intent == "Will Pay":
         # ── WILL PAY with confirmation date ──
@@ -487,7 +497,7 @@ async def analyze_conversation_with_gemini(conversation):
     
     4. **MID_CALL**: Boolean (true/false). Set to true ONLY if the conversation ends abruptly or the borrower hangs up mid-sentence.
 
-    5. **PAYMENT_DATE**: Extract EXACT date if mentioned (YYYY-MM-DD). Resolve relative dates like "tomorrow", "next Monday" based on {today_date}. If no date, return null.
+    5. **PAYMENT_DATE**: Extract EXACT date if mentioned (YYYY-MM-DD). Resolve relative dates like "tomorrow", "next Monday", "next week", "end of month" based on {today_date}. The date MUST be today ({today_date}) or in the future. If the borrower mentions a past date, adjust it to the nearest valid future date. If no date, return null.
     
     CONVERSATION:
     {conversation_text}
@@ -505,7 +515,7 @@ async def analyze_conversation_with_gemini(conversation):
     
     # Add retry logic for 429 Resource Exhausted
     max_retries = 5
-    base_delay = 3
+    base_delay = 2  # Paid tier recovers faster from rate limits
     
     for attempt in range(max_retries):
         try:
@@ -1015,30 +1025,33 @@ def generate_ai_response(user_text, language="en-IN", context=None):
     
     tone_instructions = {
         "SMA0": {
-            "en": "TONE: Soft and polite. The borrower has missed ONE month's payment. Gently inform them about the missed payment, warn about potential NPA status and credit score impact. Request payment or a payment commitment.",
-            "hi": "टोन: नरम और विनम्र। उधारकर्ता ने एक महीने का भुगतान नहीं किया है। उन्हें NPA और क्रेडिट स्कोर प्रभाव के बारे में सूचित करें। भुगतान या प्रतिबद्धता का अनुरोध करें।",
-            "ta": "தொனி: மென்மையான மற்றும் கண்ணியமான. கடன் வாங்கியவர் ஒரு மாத தவணை தவறவிட்டுள்ளார். NPA மற்றும் கடன் மதிப்பெண் பாதிப்பு பற்றி தெரிவிக்கவும். பணம் செலுத்த கோரவும்."
+            "en": "TONE: Soft and polite. The borrower has missed ONE month's payment. Inform that payment is still pending, warn that delays may impact CIBIL score and could lead to account classification issues. Request payment at the earliest or a convenient time for payment.",
+            "hi": "टोन: नरम और विनम्र। उधारकर्ता ने एक महीने का भुगतान नहीं किया है। सूचित करें कि भुगतान लंबित है, चेतावनी दें कि देरी CIBIL स्कोर को प्रभावित कर सकती है और खाता वर्गीकरण समस्याएं हो सकती हैं। जल्द से जल्द भुगतान या सुविधाजनक समय का अनुरोध करें।",
+            "ta": "தொனி: மென்மையான மற்றும் கண்ணியமான. கடன் வாங்கியவர் ஒரு மாத தவணை தவறவிட்டுள்ளார். கட்டணம் நிலுவையில் உள்ளது என்று தெரிவிக்கவும், தாமதம் CIBIL மதிப்பெண்ணை பாதிக்கலாம் என எச்சரிக்கவும். விரைவில் பணம் செலுத்த கோரவும்."
         },
         "SMA1": {
-            "en": "TONE: More urgent. The borrower has missed TWO months' payments. Highlight the serious risk of NPA classification and drastic credit score reduction. Request payment for BOTH months and ask for a firm payment commitment.",
-            "hi": "टोन: अधिक गंभीर। उधारकर्ता ने दो महीने का भुगतान नहीं किया है। NPA वर्गीकरण और क्रेडिट स्कोर में भारी गिरावट के खतरे पर जोर दें। दोनों महीनों का भुगतान मांगें।",
-            "ta": "தொனி: மிகவும் அவசரமான. கடன் வாங்கியவர் இரண்டு மாத தவணை தவறவிட்டுள்ளார். NPA வகைப்பாடு மற்றும் கடன் மதிப்பெண் வீழ்ச்சி பற்றி வலியுறுத்தவும்."
+            "en": "TONE: More urgent. The borrower has missed TWO months' payments. Records indicate payments are pending, CIBIL score is already being affected, and account may be classified as NPA if not addressed promptly. Strongly request clearing outstanding dues for both months and share a confirmed payment timeline.",
+            "hi": "टोन: अधिक गंभीर। उधारकर्ता ने दो महीने का भुगतान नहीं किया है। रिकॉर्ड बताते हैं कि भुगतान लंबित है, CIBIL स्कोर पहले से प्रभावित हो रहा है, और जल्दी निपटान न होने पर खाता NPA वर्गीकृत हो सकता है। दोनों महीनों का बकाया चुकाने और पुष्ट भुगतान समय सीमा का अनुरोध करें।",
+            "ta": "தொனி: மிகவும் அவசரமான. கடன் வாங்கியவர் இரண்டு மாத தவணை தவறவிட்டுள்ளார். CIBIL மதிப்பெண் ஏற்கனவே பாதிக்கப்படுகிறது, உடனடியாக நிவர்த்தி செய்யாவிட்டால் NPA ஆக வகைப்படுத்தப்படலாம். இரண்டு மாத நிலுவை செலுத்தவும் உறுதிப்படுத்தப்பட்ட கட்டண காலவரிசை பகிரவும் கோரவும்."
         },
         "SMA2": {
-            "en": "TONE: Serious and firm. The borrower has missed THREE months' payments. Emphasize IMMINENT NPA classification, the need to avoid further escalation, and possible legal consequences. Request payment for all three months and ask about payment plans.",
-            "hi": "टोन: गंभीर और दृढ़। उधारकर्ता ने तीन महीने का भुगतान नहीं किया है। NPA वर्गीकरण और कानूनी कार्रवाई की संभावना पर जोर दें। तीनों महीनों के भुगतान की मांग करें।",
-            "ta": "தொனி: தீவிரமான மற்றும் உறுதியான. கடன் வாங்கியவர் மூன்று மாத தவணை தவறவிட்டுள்ளார். NPA வகைப்பாடு மற்றும் சட்ட நடவடிக்கை பற்றி வலியுறுத்தவும்."
+            "en": "TONE: Serious and firm. The borrower has missed THREE months' payments. Account is at HIGH RISK of NPA classification, CIBIL score is already significantly impacted. If dues not cleared immediately, legal proceedings may be initiated. Request clearing all outstanding dues or sharing a repayment plan without delay.",
+            "hi": "टोन: गंभीर और दृढ़। उधारकर्ता ने तीन महीने का भुगतान नहीं किया है। खाता NPA वर्गीकरण के उच्च जोखिम में है, CIBIL स्कोर पहले से गंभीर रूप से प्रभावित है। बकाया तुरंत न चुकाने पर कानूनी कार्रवाई शुरू हो सकती है। सभी बकाया चुकाने या पुनर्भुगतान योजना साझा करने का अनुरोध करें।",
+            "ta": "தொனி: தீவிரமான மற்றும் உறுதியான. கடன் வாங்கியவர் மூன்று மாத தவணை தவறவிட்டுள்ளார். கணக்கு NPA வகைப்பாட்டின் அதிக ஆபத்தில் உள்ளது, CIBIL மதிப்பெண் கணிசமாக பாதிக்கப்பட்டுள்ளது. நிலுவை உடனடியாக தீர்க்கப்படாவிட்டால் சட்ட நடவடிக்கை எடுக்கப்படலாம்."
         },
         "NPA": {
-            "en": "TONE: Direct and authoritative. The borrower's account is classified as NPA (Non-Performing Asset). Acknowledge the NPA status, inform about the already-affected credit score, and URGENTLY request payment to avoid further escalation including legal proceedings.",
-            "hi": "टोन: सीधा और अधिकारपूर्ण। उधारकर्ता का खाता NPA है। NPA स्थिति स्वीकार करें, प्रभावित क्रेडिट स्कोर बताएं, कानूनी कार्रवाई से बचने के लिए तुरंत भुगतान की मांग करें।",
-            "ta": "தொனி: நேரடி மற்றும் அதிகாரபூர்வமான. கடன் வாங்கியவரின் கணக்கு NPA ஆக வகைப்படுத்தப்பட்டுள்ளது. சட்ட நடவடிக்கை தவிர்க்க உடனடியாக பணம் செலுத்த கோரவும்."
+            "en": "TONE: Direct and authoritative. The borrower's account is classified as NPA due to non-payment for more than three months. CIBIL score is already severely impacted and future credit ability may be affected. URGENTLY request immediate payment to avoid further escalation including legal action and field visits. Ask to confirm payment plan at the earliest.",
+            "hi": "टोन: सीधा और अधिकारपूर्ण। तीन महीने से अधिक भुगतान न करने के कारण उधारकर्ता का खाता NPA है। CIBIL स्कोर पर गंभीर प्रभाव पड़ा है और भविष्य में क्रेडिट क्षमता प्रभावित हो सकती है। कानूनी कार्रवाई और फील्ड विजिट से बचने के लिए तुरंत भुगतान की मांग करें। भुगतान योजना की पुष्टि करने को कहें।",
+            "ta": "தொனி: நேரடி மற்றும் அதிகாரபூர்வமான. மூன்று மாதங்களுக்கு மேலாக பணம் செலுத்தாததால் கணக்கு NPA ஆக வகைப்படுத்தப்பட்டுள்ளது. CIBIL மதிப்பெண் கடுமையாக பாதிக்கப்பட்டுள்ளது. சட்ட நடவடிக்கை மற்றும் களப்பணி தவிர்க்க உடனடியாக பணம் செலுத்த கோரவும். கட்டணத் திட்டத்தை உறுதிப்படுத்தக் கேளுங்கள்."
         }
     }
     
     tone = tone_instructions.get(acstatus.upper(), tone_instructions["SMA0"])
     
     # System prompts with structured conversation flow (status-aware, due date crossed)
+    today_str = datetime.now().strftime("%B %d, %Y")  # e.g. "March 18, 2026"
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+    
     sys_prompts = {
         "en-IN": (
             "You are Vidya, a loan collection assistant on a PHONE CALL. "
@@ -1047,14 +1060,17 @@ def generate_ai_response(user_text, language="en-IN", context=None):
             "- Never repeat what you already said. Be empathetic but direct.\n"
             f"- Address the borrower as '{honorific_en}' (based on their gender).\n"
             "- NEVER ask for information you already have (amount, name, dates).\n"
+            f"- Today's date is: {today_str} ({today_iso}).\n"
             f"- {tone['en']}\n"
             f"- The borrower's account status is: {acstatus}. The payment due date has ALREADY PASSED.\n"
+            f"- 🚨 PAST DATE RULE: If the borrower mentions a payment date that is BEFORE today ({today_str}), politely tell them: 'Sorry {honorific_en}, that date has already passed. Please provide an upcoming date to pay the due amount.' Do NOT accept past dates.\n"
             "\nCONVERSATION FLOW TO FOLLOW:\n"
             "1. GREETING (already done): Inform borrower about missed payment(s), warn about credit score impact and NPA risk.\n"
-            f"2. If borrower confirms they WILL PAY: 'Good to know {honorific_en}, we will update our records. Do you have any questions?'\n"
-            f"3. If borrower asks about loan amounts: 'Sure {honorific_en}, your current outstanding is [amount] and after this month's payment it would be [remaining].'\n"
-            f"4. When borrower says thank you or has no more questions: 'Thank you {honorific_en}, have a good day!'\n"
-            "5. For any other scenario (dispute, extension, abusive etc.), handle professionally in 1 sentence.\n"
+            f"2. If borrower confirms they WILL PAY: Ask for a specific payment date. Only accept dates from today ({today_str}) onwards.\n"
+            f"3. If borrower gives a VALID future date: 'Good to know {honorific_en}, we will note your commitment for [date]. We will follow up accordingly.'\n"
+            f"4. If borrower asks about loan amounts: 'Sure {honorific_en}, your current outstanding is [amount] and after this month's payment it would be [remaining].'\n"
+            f"5. When borrower says thank you or has no more questions: 'Thank you {honorific_en}, have a good day!'\n"
+            "6. For any other scenario (dispute, extension, abusive etc.), handle professionally in 1 sentence.\n"
             + borrower_info_str
         ),
         "hi-IN": (
@@ -1064,14 +1080,17 @@ def generate_ai_response(user_text, language="en-IN", context=None):
             "- जो पहले कह चुकी हैं वो दोबारा न कहें।\n"
             f"- उधारकर्ता को '{honorific_hi}' कहें (उनके लिंग के आधार पर)।\n"
             "- जो जानकारी आपके पास पहले से है वो कभी न पूछें।\n"
+            f"- आज की तारीख: {today_str} ({today_iso}) है।\n"
             f"- {tone['hi']}\n"
             f"- उधारकर्ता का खाता स्थिति: {acstatus}। भुगतान की due date पहले ही बीत चुकी है।\n"
+            f"- 🚨 पिछली तारीख नियम: यदि उधारकर्ता आज ({today_str}) से पहले की कोई तारीख बताए, तो विनम्रता से कहें: 'क्षमा करें {honorific_hi}, वह तारीख पहले ही बीत चुकी है। कृपया बकाया राशि के भुगतान के लिए आने वाली तारीख बताएं।' पिछली तारीख स्वीकार न करें।\n"
             "\nबातचीत का क्रम:\n"
             "1. अभिवादन (पहले ही हो चुका): छूटे हुए भुगतान के बारे में सूचित करें, क्रेडिट स्कोर और NPA जोखिम की चेतावनी दें।\n"
-            f"2. अगर उधारकर्ता भुगतान की पुष्टि करे: 'यह सुनकर अच्छा लगा {honorific_hi}, हम रिकॉर्ड अपडेट कर देंगे। कोई सवाल?'\n"
-            f"3. अगर लोन राशि पूछें: 'जी {honorific_hi}, आपकी वर्तमान बकाया राशि [राशि] है और भुगतान के बाद [शेष] होगी।'\n"
-            f"4. जब धन्यवाद कहें: 'धन्यवाद {honorific_hi}, आपका दिन शुभ हो!'\n"
-            "5. अन्य स्थिति को 1 वाक्य में पेशेवर तरीके से संभालें।\n"
+            f"2. अगर उधारकर्ता भुगतान की पुष्टि करे: सटीक तारीख पूछें। आज ({today_str}) या उसके बाद की तारीख ही स्वीकार करें।\n"
+            f"3. अगर उधारकर्ता सही भविष्य की तारीख दे: 'यह सुनकर अच्छा लगा {honorific_hi}, [तारीख] के लिए आपकी प्रतिबद्धता नोट कर ली है। हम उसके अनुसार फॉलो अप करेंगे।'\n"
+            f"4. अगर लोन राशि पूछें: 'जी {honorific_hi}, आपकी वर्तमान बकाया राशि [राशि] है और भुगतान के बाद [शेष] होगी।'\n"
+            f"5. जब धन्यवाद कहें: 'धन्यवाद {honorific_hi}, आपका दिन शुभ हो!'\n"
+            "6. अन्य स्थिति को 1 वाक्य में पेशेवर तरीके से संभालें।\n"
             + borrower_info_str
         ),
         "ta-IN": (
@@ -1081,14 +1100,17 @@ def generate_ai_response(user_text, language="en-IN", context=None):
             "- ஏற்கனவே கூறியதை மீண்டும் கூறாதீர்கள்.\n"
             f"- கடன் வாங்கியவரை '{honorific_ta}' என்று அழையுங்கள்.\n"
             "- ஏற்கனவே உள்ள தகவல்களை கேட்காதீர்கள்.\n"
+            f"- இன்றைய தேதி: {today_str} ({today_iso}).\n"
             f"- {tone['ta']}\n"
             f"- கடன் வாங்கியவரின் கணக்கு நிலை: {acstatus}. செலுத்த வேண்டிய தேதி ஏற்கனவே கடந்துவிட்டது.\n"
+            f"- 🚨 கடந்த தேதி விதி: கடன் வாங்கியவர் இன்று ({today_str}) க்கு முன்னதான தேதியை குறிப்பிட்டால், பணிவாக சொல்லுங்கள்: 'மன்னிக்கவும் {honorific_ta}, அந்த தேதி ஏற்கனவே கடந்துவிட்டது. நிலுவைத் தொகை செலுத்த வரவிருக்கும் தேதியைக் கூறுங்கள்.' கடந்த தேதிகளை ஏற்க வேண்டாம்.\n"
             "\nஉரையாடல் வரிசை:\n"
             "1. வாழ்த்து (ஏற்கனவே செய்யப்பட்டது): தவறவிட்ட தவணை பற்றி தெரிவிக்கவும், கடன் மதிப்பெண் மற்றும் NPA அபாயம் பற்றி எச்சரிக்கவும்.\n"
-            f"2. செலுத்துவதாக உறுதியளித்தால்: 'நல்லது {honorific_ta}, பதிவுகளை புதுப்பிப்போம். கேள்விகள் உள்ளதா?'\n"
-            f"3. கடன் தொகை குறித்து கேட்டால்: 'நிச்சயமாக {honorific_ta}, உங்கள் தற்போதைய நிலுவை [தொகை] மற்றும் கட்டணத்திற்குப் பிறகு [மீதமுள்ள] ஆகும்.'\n"
-            f"4. நன்றி சொல்லும்போது: 'நன்றி {honorific_ta}, நல்ல நாள் வாழ்த்துகள்!'\n"
-            "5. பிற சூழ்நிலைகளை 1 வாக்கியத்தில் தொழில்முறையாக கையாளுங்கள்.\n"
+            f"2. செலுத்துவதாக உறுதியளித்தால்: குறிப்பிட்ட தேதி கேளுங்கள். இன்று ({today_str}) அல்லது அதற்குப் பிறகு மட்டுமே ஏற்கவும்.\n"
+            f"3. சரியான எதிர்கால தேதி கொடுத்தால்: 'நல்லது {honorific_ta}, [தேதி]-க்கான உங்கள் உறுதிமொழியைக் குறித்துக் கொண்டோம். அதற்கேற்ப பின்தொடர்வோம்.'\n"
+            f"4. கடன் தொகை குறித்து கேட்டால்: 'நிச்சயமாக {honorific_ta}, உங்கள் தற்போதைய நிலுவை [தொகை] மற்றும் கட்டணத்திற்குப் பிறகு [மீதமுள்ள] ஆகும்.'\n"
+            f"5. நன்றி சொல்லும்போது: 'நன்றி {honorific_ta}, நல்ல நாள் வாழ்த்துகள்!'\n"
+            "6. பிற சூழ்நிலைகளை 1 வாக்கியத்தில் தொழில்முறையாக கையாளுங்கள்.\n"
             + borrower_info_str
         )
     }
@@ -1280,6 +1302,19 @@ class ConversationHandler:
                 intent = ai_analysis.get("intent", "No Response")
                 is_mid_call = ai_analysis.get("mid_call", False)
                 borrower_name = borrower.get("h_name", borrower.get("BORROWER", "Borrower"))
+                
+                # Validate: payment_date must be today or in the future
+                # EXCEPTION: For "Paid" intent, past dates are valid (borrower already paid)
+                if payment_date and payment_date.lower() != "null" and intent != "Paid":
+                    try:
+                        pd = datetime.strptime(payment_date, "%Y-%m-%d")
+                        if pd.date() < datetime.now().date():
+                            corrected = datetime.now() + timedelta(days=7)
+                            payment_date = corrected.strftime("%Y-%m-%d")
+                            print(f"[REAL CALL] ⚠️ Payment date was in the past, corrected to {payment_date}")
+                            ai_analysis["payment_date"] = payment_date
+                    except ValueError:
+                        pass
                 
                 outcomes = determine_report_outcomes(
                     intent, 
