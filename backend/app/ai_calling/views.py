@@ -12,7 +12,6 @@ from app.ai_calling.service import (
     get_call_data_store,
     gemini_client,
     analyze_conversation_with_gemini,
-    analyze_conversation_with_groq,
     calculate_follow_up_schedule,
     determine_report_outcomes,
     ConversationHandler
@@ -415,8 +414,8 @@ STATUS_OPENING_MESSAGES = {
 # CORE LOGIC
 # ============================================================
 
-# Global semaphore to limit concurrent AI analysis requests (prevent 429)
-ai_semaphore = asyncio.Semaphore(2)
+# Global semaphore to limit concurrent AI analysis requests (Optimized for Paid Tier)
+ai_semaphore = asyncio.Semaphore(10)
 
 async def create_dummy_call(user_id: str, phone_number: str, language: str, borrower_id: str = None, intent: str = "normal", acstatus: str = "SMA0") -> dict:
     """Async helper to generate a dummy call and save to DB using model functions with User Isolation"""
@@ -467,10 +466,8 @@ async def create_dummy_call(user_id: str, phone_number: str, language: str, borr
             
         # Use semaphore to limit global concurrent AI requests
         async with ai_semaphore:
-            # Consistent with save_transcript, use Groq for the report logic
-            ai_analysis = await analyze_conversation_with_groq(conversation)
-            if not ai_analysis:
-                ai_analysis = await analyze_conversation_with_gemini(conversation)
+            # Use Gemini for analysis (Gemini-only mode)
+            ai_analysis = await analyze_conversation_with_gemini(conversation)
         
         # Extract payment information from AI analysis
         intent = ai_analysis.get("intent", "No Response") if ai_analysis else "No Response"
@@ -682,6 +679,9 @@ async def trigger_bulk_calls(request: BulkCallRequest, current_user: dict = Depe
             logger.info(f"[BULK CALL] Borrower {b.contnr} → {'DUMMY' if borrower_use_dummy else 'REAL'} call (global)")
         
         async_tasks.append(process_single_call(user_id, b, borrower_use_dummy, lang))
+        # Add a tiny 0.5s delay between starting each call to prevent hitting 'Burst Limits' (QPS)
+        # Even with 2,000 RPM, sending 20 requests in 1ms can trigger a 429.
+        await asyncio.sleep(0.5)
         
     results = await asyncio.gather(*async_tasks)
     

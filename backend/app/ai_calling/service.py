@@ -27,17 +27,23 @@ from vonage import Vonage, Auth
 try:
     from google import genai
     from google.genai import types
+    import logging
+    # Suppress internal Gemini SDK logging to match Groq's quiet behavior
+    logging.getLogger("google_genai").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     GEMINI_AVAILABLE = True
 except ImportError:
     print("⚠️  WARNING: google-genai not installed. Install with: pip install google-genai")
     GEMINI_AVAILABLE = False
 
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    print("⚠️  WARNING: groq not installed. Install with: pip install groq")
-    GROQ_AVAILABLE = False
+# --- GROQ COMMENTED OUT: Using Gemini Only ---
+# try:
+#     from groq import Groq
+#     GROQ_AVAILABLE = True
+# except ImportError:
+#     print("⚠️  WARNING: groq not installed. Install with: pip install groq")
+#     GROQ_AVAILABLE = False
+GROQ_AVAILABLE = False
 
 from config import settings
 
@@ -77,38 +83,40 @@ if GEMINI_AVAILABLE and settings.GEMINI_API_KEY:
 else:
     print("[GEMINI] ⚠️  Gemini not configured - AI analysis will be disabled")
 
-# Initialize Groq AI client
+# --- GROQ COMMENTED OUT: Using Gemini Only ---
 groq_client = None
-print(f"[DEBUG] GROQ_AVAILABLE: {GROQ_AVAILABLE}")
-print(f"[DEBUG] settings.GROQ_API_KEY present: {bool(settings.GROQ_API_KEY)}")
-
-if GROQ_AVAILABLE and settings.GROQ_API_KEY:
-    if "your_groq_api_key_here" in settings.GROQ_API_KEY:
-        print("[GROQ] ⚠️  Groq API key is still the placeholder. Please update .env")
-    else:
-        try:
-            from groq import AsyncGroq
-            groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-            print("[GROQ] ✅ Async Groq AI client initialized")
-        except Exception as e:
-            print(f"[GROQ] ⚠️  Failed to initialize: {e}")
-            groq_client = None
-else:
-    if not GROQ_AVAILABLE:
-        print("[GROQ] ⚠️  Groq library not installed.")
-    if not settings.GROQ_API_KEY:
-        print("[GROQ] ⚠️  GROQ_API_KEY not found in settings.")
-    print("[GROQ] ⚠️  Groq not configured - fallback analysis will be disabled")
-
-# Initialize SYNC Groq client (for real-time responses in Flask sync context)
 sync_groq_client = None
-if GROQ_AVAILABLE and settings.GROQ_API_KEY and "your_groq_api_key_here" not in settings.GROQ_API_KEY:
-    try:
-        sync_groq_client = Groq(api_key=settings.GROQ_API_KEY)
-        print("[GROQ] ✅ Sync Groq client initialized for real-time call responses")
-    except Exception as e:
-        print(f"[GROQ] ⚠️  Failed to initialize sync client: {e}")
-        sync_groq_client = None
+print("[GROQ] ⚠️  Groq disabled — using Gemini API only")
+# print(f"[DEBUG] GROQ_AVAILABLE: {GROQ_AVAILABLE}")
+# print(f"[DEBUG] settings.GROQ_API_KEY present: {bool(settings.GROQ_API_KEY)}")
+#
+# if GROQ_AVAILABLE and settings.GROQ_API_KEY:
+#     if "your_groq_api_key_here" in settings.GROQ_API_KEY:
+#         print("[GROQ] ⚠️  Groq API key is still the placeholder. Please update .env")
+#     else:
+#         try:
+#             from groq import AsyncGroq
+#             groq_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+#             print("[GROQ] ✅ Async Groq AI client initialized")
+#         except Exception as e:
+#             print(f"[GROQ] ⚠️  Failed to initialize: {e}")
+#             groq_client = None
+# else:
+#     if not GROQ_AVAILABLE:
+#         print("[GROQ] ⚠️  Groq library not installed.")
+#     if not settings.GROQ_API_KEY:
+#         print("[GROQ] ⚠️  GROQ_API_KEY not found in settings.")
+#     print("[GROQ] ⚠️  Groq not configured - fallback analysis will be disabled")
+#
+# # Initialize SYNC Groq client (for real-time responses in Flask sync context)
+# sync_groq_client = None
+# if GROQ_AVAILABLE and settings.GROQ_API_KEY and "your_groq_api_key_here" not in settings.GROQ_API_KEY:
+#     try:
+#         sync_groq_client = Groq(api_key=settings.GROQ_API_KEY)
+#         print("[GROQ] ✅ Sync Groq client initialized for real-time call responses")
+#     except Exception as e:
+#         print(f"[GROQ] ⚠️  Failed to initialize sync client: {e}")
+#         sync_groq_client = None
 
 
 # ============================================================
@@ -443,127 +451,18 @@ def generate_jwt_token():
 
 async def analyze_conversation_with_gemini(conversation):
     """
-    COMMENTED OUT GEMINI: FORCING GROQ FOR NOW
+    Primary analysis using Gemini AI (Gemini-only mode).
     """
-    print("[AI ANALYSIS] 🔄 Forcing Groq fallback as requested...")
-    return await analyze_conversation_with_groq(conversation)
-
-    # if not gemini_client:
-    #     print("[GEMINI] ⚠️  Gemini client not available, skipping analysis")
-    #     return {
-    #         "summary": "AI analysis not available - Gemini API not configured",
-    #         "sentiment": "Neutral",
-    #         "sentiment_reasoning": "Analysis skipped",
-    #         "intent": "No Response",
-    #         "intent_reasoning": "Analysis skipped",
-    #         "payment_date": None
-    #     }
-    
-    # # Prepare conversation text
-    # conversation_text = "\n".join([
-    #     f"{entry['speaker']}: {entry['text']}" 
-    #     for entry in conversation
-    # ])
-    # 
-    # prompt = f"""You are an AI analyst reviewing a phone conversation between a collection agent (AI) and a borrower (User).
-    # 
-    # Analyze this conversation and provide:
-    # 
-    # 1. **SUMMARY**: A concise 2-3 sentence summary of what was discussed.
-    # 
-    # 2. **SENTIMENT**: Classify as Positive, Neutral, or Negative.
-    # 
-    # 3. **INTENT**: Classify as one of the following:
-    #    - **Paid**, **Will Pay**, **Needs Extension**, **Dispute**, **No Response**, **Abusive Language**, **Threatening Language**, **Stop Calling**.
-    # 
-    # 4. **MID_CALL**: Boolean (true/false). Set to true ONLY if the conversation ends abruptly or the borrower hangs up mid-sentence.
-    # 
-    # CONVERSATION:
-    # {conversation_text}
-    # 
-    # Respond in JSON format only with these exact keys:
-    # {{
-    #     "summary": "...",
-    #     "sentiment": "...",
-    #     "sentiment_reasoning": "...",
-    #     "intent": "...",
-    #     "intent_reasoning": "...",
-    #     "payment_date": "YYYY-MM-DD or null",
-    #     "extension_date": "YYYY-MM-DD or null",
-    #     "mid_call": true/false
-    # }}"""
-    # 
-    # 
-    # # Add retry logic for 429 Resource Exhausted
-    # max_retries = 5
-    # base_delay = 3
-    # 
-    # for attempt in range(max_retries):
-    #     try:
-    #         print(f"\n[GEMINI] 🤖 Starting AI analysis (Attempt {attempt+1}/{max_retries})...")
-    #         
-    #         # Use async version of generate_content
-    #         response = await gemini_client.aio.models.generate_content(
-    #             model='gemini-2.0-flash',
-    #             contents=prompt
-    #         )
-    #         
-    #         response_text = response.text.strip()
-    #         
-    #         # Clean JSON
-    #         if "```json" in response_text:
-    #             response_text = response_text.split("```json")[1].split("```")[0].strip()
-    #         elif "```" in response_text:
-    #             response_text = response_text.split("```")[1].split("```")[0].strip()
-    #         
-    #         analysis = json.loads(response_text)
-    #         print(f"[GEMINI] ✅ Analysis completed successfully")
-    #         return analysis
-    # 
-    #     except Exception as e:
-    #         error_str = str(e).lower()
-    #         if "429" in error_str or "resource_exhausted" in error_str:
-    #             if attempt < max_retries - 1:
-    #                 # Exponential backoff with random jitter to avoid thundering herd
-    #                 delay = (base_delay * (2 ** attempt)) + random.uniform(0, 5)
-    #                 print(f"[GEMINI] ⏳ Rate limit hit. Retrying in {delay:.1f}s...")
-    #                 await asyncio.sleep(delay)
-    #                 continue
-    #             else:
-    #                 print(f"[GEMINI] 🚨 Rate limit exhausted. Falling back to Groq...")
-    #                 fallback = await analyze_conversation_with_groq(conversation)
-    #                 if fallback: return fallback
-    #         
-    #         print(f"[GEMINI] ❌ Analysis error: {e}")
-    #         
-    #         if attempt < max_retries - 1:
-    #             await asyncio.sleep(2)
-    #             continue
-    #         
-    #         # Check if it's a 429 error and try fallback
-    #         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-    #             print(f"[GEMINI] 🚨 Rate limit hit. Attempting fallback to Groq...")
-    #             fallback_analysis = await analyze_conversation_with_groq(conversation)
-    #             if fallback_analysis:
-    #                 return fallback_analysis
-    #         
-    #         return {
-    #             "summary": "Unable to analyze conversation",
-    #             "sentiment": "Neutral",
-    #             "intent": "No Response"
-    #         }
-    # 
-    # return {"summary": "Analysis failed", "sentiment": "Neutral", "intent": "No Response"}
-
-
-async def analyze_conversation_with_groq(conversation):
-    """
-    Fallback analysis using Groq AI (Llama 3) when Gemini is unavailable or rate-limited.
-    """
-    
-    if not groq_client:
-        print("[GROQ] ⚠️  Groq client not available, skipping fallback analysis")
-        return None
+    if not gemini_client:
+        print("[GEMINI] ⚠️  Gemini client not available, returning default analysis")
+        return {
+            "summary": "AI analysis not available - Gemini API not configured",
+            "sentiment": "Neutral",
+            "sentiment_reasoning": "Analysis skipped",
+            "intent": "No Response",
+            "intent_reasoning": "Analysis skipped",
+            "payment_date": None
+        }
     
     # Prepare conversation text
     conversation_text = "\n".join([
@@ -577,46 +476,117 @@ async def analyze_conversation_with_groq(conversation):
     
     Current Date: {today_date}
 
-Analyze this conversation and provide:
-1. SUMMARY: A concise 2-3 sentence summary.
-2. SENTIMENT: Positive, Neutral, or Negative.
-3. INTENT: Paid, Will Pay, Needs Extension, Dispute, No Response, Abusive Language, Threatening Language, or Stop Calling.
-4. PAYMENT_DATE: Extract EXACT date if mentioned (YYYY-MM-DD). handling "tomorrow", "next week", etc. relative to {today_date}. If no date, return null.
-5. MID_CALL: Boolean (true/false). Set to true ONLY if the conversation ends abruptly or the borrower hangs up mid-sentence without a professional closing.
-
-CONVERSATION:
-{conversation_text}
-
-Respond in JSON format only with these exact keys:
-{{
-    "summary": "...",
-    "sentiment": "...",
-    "intent": "...",
-    "payment_date": "YYYY-MM-DD or null",
-    "mid_call": true/false
-}}"""
-
+    Analyze this conversation and provide:
     
-    try:
-        print(f"\n[GROQ] 🤖 Starting fallback AI analysis...")
-        
-        response = await groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that responds in JSON format."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"}
-        )
-        
-        response_text = response.choices[0].message.content.strip()
-        analysis = json.loads(response_text)
-        print(f"[GROQ] ✅ Analysis completed successfully via fallback")
-        return analysis
+    1. **SUMMARY**: A concise 2-3 sentence summary of what was discussed.
+    
+    2. **SENTIMENT**: Classify as Positive, Neutral, or Negative.
+    
+    3. **INTENT**: Classify as one of the following:
+       - **Paid**, **Will Pay**, **Needs Extension**, **Dispute**, **No Response**, **Abusive Language**, **Threatening Language**, **Stop Calling**.
+    
+    4. **MID_CALL**: Boolean (true/false). Set to true ONLY if the conversation ends abruptly or the borrower hangs up mid-sentence.
 
-    except Exception as e:
-        print(f"[GROQ] ❌ Fallback analysis error: {e}")
-        return None
+    5. **PAYMENT_DATE**: Extract EXACT date if mentioned (YYYY-MM-DD). Resolve relative dates like "tomorrow", "next Monday" based on {today_date}. If no date, return null.
+    
+    CONVERSATION:
+    {conversation_text}
+    
+    Respond in JSON format only with these exact keys:
+    {{
+        "summary": "...",
+        "sentiment": "...",
+        "sentiment_reasoning": "...",
+        "intent": "...",
+        "intent_reasoning": "...",
+        "payment_date": "YYYY-MM-DD or null",
+        "mid_call": true/false
+    }}"""
+    
+    # Add retry logic for 429 Resource Exhausted
+    max_retries = 5
+    base_delay = 3
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"\n[GEMINI] 🤖 Starting AI analysis (Attempt {attempt+1}/{max_retries})...")
+            
+            # Use async version of generate_content with explicit config to reduce noise
+            response = await gemini_client.aio.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,  # Lower temperature for more consistent JSON
+                    top_p=0.95,
+                    max_output_tokens=1024,
+                    response_mime_type="application/json" # Force JSON mode at the SDK level
+                )
+            )
+            
+            response_text = response.text.strip()
+            
+            # Clean JSON
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+            
+            analysis = json.loads(response_text)
+            print(f"[GEMINI] ✅ Analysis completed successfully")
+            return analysis
+    
+        except Exception as e:
+            error_str = str(e).lower()
+            if "429" in error_str or "resource_exhausted" in error_str:
+                if attempt < max_retries - 1:
+                    delay = (base_delay * (2 ** attempt)) + random.uniform(0, 5)
+                    print(f"[GEMINI] ⏳ Rate limit hit. Retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    continue
+            
+            print(f"[GEMINI] ❌ Analysis error: {e}")
+            
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2)
+                continue
+            
+            return {
+                "summary": "Unable to analyze conversation",
+                "sentiment": "Neutral",
+                "intent": "No Response",
+                "payment_date": None
+            }
+    
+    return {"summary": "Analysis failed", "sentiment": "Neutral", "intent": "No Response", "payment_date": None}
+
+
+# --- GROQ ANALYSIS COMMENTED OUT: Using Gemini Only ---
+# async def analyze_conversation_with_groq(conversation):
+#     """
+#     Fallback analysis using Groq AI (Llama 3) when Gemini is unavailable or rate-limited.
+#     """
+#     if not groq_client:
+#         print("[GROQ] ⚠️  Groq client not available, skipping fallback analysis")
+#         return None
+#     
+#     conversation_text = "\n".join([
+#         f"{entry['speaker']}: {entry['text']}" 
+#         for entry in conversation
+#     ])
+#     today_date = datetime.now().strftime("%Y-%m-%d (%A)")
+#     prompt = f"""..."""  # Full prompt omitted for brevity
+#     try:
+#         response = await groq_client.chat.completions.create(
+#             model="llama-3.3-70b-versatile",
+#             messages=[...],
+#             response_format={"type": "json_object"}
+#         )
+#         response_text = response.choices[0].message.content.strip()
+#         analysis = json.loads(response_text)
+#         return analysis
+#     except Exception as e:
+#         print(f"[GROQ] ❌ Fallback analysis error: {e}")
+#         return None
 
 
 # ============================================================
@@ -1152,25 +1122,7 @@ def generate_ai_response(user_text, language="en-IN", context=None):
     
     user_message = f"Conversation so far:\n{conv_history}\n\nUser just said: {user_text}{lang_switch_note}\n\nRespond with 1-2 short sentences following the conversation flow above."
     
-    # PRIMARY: Use sync Groq client (fast, no async issues in Flask)
-    if sync_groq_client:
-        try:
-            response = sync_groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                max_tokens=100,
-                temperature=0.7
-            )
-            result = response.choices[0].message.content.strip()
-            print(f"[GROQ] ✅ Real-time response generated ({len(result)} chars)")
-            return result
-        except Exception as e:
-            print(f"[GROQ] ❌ Sync response error: {e}")
-    
-    # FALLBACK: Use Gemini
+    # PRIMARY: Use Gemini for real-time responses
     if gemini_client:
         try:
             prompt = f"{system_prompt}\n\n{user_message}\n\nAI (1-2 short sentences only):"
@@ -1179,9 +1131,29 @@ def generate_ai_response(user_text, language="en-IN", context=None):
                 contents=prompt,
                 config=types.GenerateContentConfig(temperature=0.7, max_output_tokens=100)
             )
-            return response.text.strip()
+            result = response.text.strip()
+            print(f"[GEMINI] ✅ Real-time response generated ({len(result)} chars)")
+            return result
         except Exception as e:
-            print(f"[GEMINI] ❌ Fallback response error: {e}")
+            print(f"[GEMINI] ❌ Real-time response error: {e}")
+    
+    # --- GROQ COMMENTED OUT ---
+    # if sync_groq_client:
+    #     try:
+    #         response = sync_groq_client.chat.completions.create(
+    #             model="llama-3.3-70b-versatile",
+    #             messages=[
+    #                 {"role": "system", "content": system_prompt},
+    #                 {"role": "user", "content": user_message}
+    #             ],
+    #             max_tokens=100,
+    #             temperature=0.7
+    #         )
+    #         result = response.choices[0].message.content.strip()
+    #         print(f"[GROQ] ✅ Real-time response generated ({len(result)} chars)")
+    #         return result
+    #     except Exception as e:
+    #         print(f"[GROQ] ❌ Sync response error: {e}")
     
     return FALLBACKS.get(language, FALLBACKS["en-IN"])
 
@@ -1268,8 +1240,8 @@ class ConversationHandler:
         """Save transcript using standalone model functions with User Isolation"""
         duration = (datetime.now() - self.start_time).total_seconds()
         
-        # Use Groq for analysis
-        ai_analysis = await analyze_conversation_with_groq(self.conversation) if len(self.conversation) > 1 else {
+        # Use Gemini for analysis
+        ai_analysis = await analyze_conversation_with_gemini(self.conversation) if len(self.conversation) > 1 else {
             "summary": "No meaningful conversation detected",
             "sentiment": "No Response",
             "intent": "No Response",
