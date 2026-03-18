@@ -1,7 +1,7 @@
 // API Configuration
 const API_BASE_URL = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
     ? 'http://127.0.0.1:8000'
-    : 'https://ai-calling-live.onrender.com'; // Your Render URL
+    : 'https://ai-calling-live-1.onrender.com'; // Your Render URL
 
 // Global state
 let currentKpiData = null;
