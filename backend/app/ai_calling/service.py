@@ -60,12 +60,23 @@ audio_cache = {}
 
 # Initialize Vonage client
 try:
-    vonage_client = Vonage(Auth(
-        application_id=settings.VONAGE_APPLICATION_ID,
-        private_key=settings.VONAGE_PRIVATE_KEY_PATH
-    ))
-    voice = vonage_client.voice
-    print("[VONAGE] ✅ Vonage Voice client initialized")
+    # Use private key content if available (for Render/ENV), otherwise use path
+    private_key = settings.VONAGE_PRIVATE_KEY_CONTENT
+    if not private_key and os.path.exists(settings.VONAGE_PRIVATE_KEY_PATH):
+        with open(settings.VONAGE_PRIVATE_KEY_PATH, 'rb') as f:
+            private_key = f.read()
+    
+    if private_key:
+        vonage_client = Vonage(Auth(
+            application_id=settings.VONAGE_APPLICATION_ID,
+            private_key=private_key
+        ))
+        voice = vonage_client.voice
+        print("[VONAGE] ✅ Vonage Voice client initialized")
+    else:
+        print("[VONAGE] ⚠️  No private key found (check .env or private.key)")
+        vonage_client = None
+        voice = None
 except Exception as e:
     print(f"[VONAGE] ⚠️  Failed to initialize: {e}")
     vonage_client = None
@@ -439,8 +450,15 @@ def determine_report_outcomes(intent, payment_date, category, borrower_name="Bor
 def generate_jwt_token():
     """Generate JWT token for Vonage API"""
     try:
-        with open(settings.VONAGE_PRIVATE_KEY_PATH, 'rb') as key_file:
-            private_key = key_file.read()
+        # Use private key content if available (for Render/ENV), otherwise use path
+        private_key = settings.VONAGE_PRIVATE_KEY_CONTENT
+        if not private_key and os.path.exists(settings.VONAGE_PRIVATE_KEY_PATH):
+            with open(settings.VONAGE_PRIVATE_KEY_PATH, 'rb') as f:
+                private_key = f.read()
+        
+        if not private_key:
+            print("[JWT] ⚠️  No private key found for JWT generation")
+            return None
         
         payload = {
             'application_id': settings.VONAGE_APPLICATION_ID,
